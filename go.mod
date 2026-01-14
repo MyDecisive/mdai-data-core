@@ -12,6 +12,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.11.8
 	github.com/nats-io/nats.go v1.45.0
 	github.com/nats-io/nuid v1.0.1
+	github.com/open-telemetry/opamp-go v0.22.0
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/stretchr/testify v1.11.1
 	github.com/synadia-io/orbit.go/pcgroups v0.1.0
@@ -46,6 +47,7 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
