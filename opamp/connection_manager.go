@@ -8,30 +8,41 @@ import (
 	"time"
 )
 
-type ConnectionManager struct {
+// TODO: mockery generate mock
+
+type ConnectionManager interface {
+	AddConnection(conn types.Connection, id string)
+	RemoveConnection(conn types.Connection)
+	DispatchRestartCommand(ctx context.Context) error
+}
+
+// enforce implementation of ConnectionManager interface.
+var _ ConnectionManager = &AgentConnectionManager{}
+
+type AgentConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[types.Connection]string // Keyed by the connection to the instanceID
 }
 
-func NewConnectionManager() *ConnectionManager {
-	return &ConnectionManager{
+func NewAgentConnectionManager() *AgentConnectionManager {
+	return &AgentConnectionManager{
 		connections: make(map[types.Connection]string),
 	}
 }
 
-func (m *ConnectionManager) Add(id string, conn types.Connection) {
+func (m *AgentConnectionManager) AddConnection(conn types.Connection, id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.connections[conn] = id
 }
 
-func (m *ConnectionManager) Remove(conn types.Connection) {
+func (m *AgentConnectionManager) RemoveConnection(conn types.Connection) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.connections, conn)
 }
 
-func (m *ConnectionManager) SendRestartCommand(ctx context.Context) error {
+func (m *AgentConnectionManager) DispatchRestartCommand(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 

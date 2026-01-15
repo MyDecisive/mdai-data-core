@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -17,9 +16,6 @@ import (
 	"github.com/decisiveai/mdai-data-core/eventing/publisher"
 	"github.com/decisiveai/mdai-data-core/opamp"
 	variables "github.com/decisiveai/mdai-data-core/variables"
-	"github.com/open-telemetry/opamp-go/protobufs"
-	"github.com/open-telemetry/opamp-go/server"
-	"github.com/open-telemetry/opamp-go/server/types"
 	"github.com/valkey-io/valkey-go"
 	"go.uber.org/zap"
 )
@@ -43,117 +39,29 @@ const (
 // value is the element to be added to the data type.
 // correlationId is used for tracking and auditing purposes.
 type HandlerAdapter struct {
-	client                valkey.Client
-	logger                *zap.Logger
-	valkeyAdapter         *variables.ValkeyAdapter
-	publisher             publisher.Publisher
-	retryMaxTime          time.Duration
-	opAmpServer           server.OpAMPServer
-	opAmpAgentConnections *opamp.ConnectionManager
+	client                 valkey.Client
+	logger                 *zap.Logger
+	valkeyAdapter          *variables.ValkeyAdapter
+	publisher              publisher.Publisher
+	retryMaxTime           time.Duration
+	opampConnectionManager opamp.ConnectionManager
 }
 
 // NewHandlerAdapter creates a new wrapper for handling variable operations.
-func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, opampAgentURL string, opts ...variables.ValkeyAdapterOption) (*HandlerAdapter, error) {
+func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, connManager opamp.ConnectionManager, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
 	va := variables.NewValkeyAdapter(client, logger, opts...)
 
-	opampServer := server.New(opamp.NewLoggerFromZap(logger, "opamp-server"))
-	opampConnectionManager := opamp.NewConnectionManager()
-
-	settings := server.StartSettings{
-		Settings: server.Settings{
-			Callbacks: types.Callbacks{
-				OnConnecting: func(request *http.Request) types.ConnectionResponse {
-					return types.ConnectionResponse{
-						Accept: true,
-						ConnectionCallbacks: types.ConnectionCallbacks{
-							OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-								opampConnectionManager.Add(string(message.GetInstanceUid()), conn)
-								// TODO: handle message from agent
-								return &protobufs.ServerToAgent{}
-							},
-							OnConnectionClose: func(conn types.Connection) {
-								opampConnectionManager.Remove(conn)
-							},
-						},
-					}
-				},
-			},
-		},
-	}
-
-	if err := opampServer.Start(settings); err != nil {
-		return nil, err
-	}
-
 	ha := &HandlerAdapter{
-		client:                client,
-		logger:                logger,
-		valkeyAdapter:         va,
-		publisher:             pub,
-		retryMaxTime:          10 * time.Second,
-		opAmpServer:           opampServer,
-		opAmpAgentConnections: opampConnectionManager,
-	}
-
-	return ha, nil
-}
-
-// MustNewHandlerAdapter creates a new wrapper for handling variable operations and will panic on error.
-func MustNewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, opampServerURL string, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
-	va := variables.NewValkeyAdapter(client, logger, opts...)
-
-	opampServer := server.New(opamp.NewLoggerFromZap(logger, "opamp-server"))
-	opampConnectionManager := opamp.NewConnectionManager()
-
-	settings := server.StartSettings{
-		Settings: server.Settings{
-			Callbacks: types.Callbacks{
-				OnConnecting: func(request *http.Request) types.ConnectionResponse {
-					return types.ConnectionResponse{
-						Accept: true,
-						ConnectionCallbacks: types.ConnectionCallbacks{
-							OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-								opampConnectionManager.Add(string(message.GetInstanceUid()), conn)
-								// TODO: handle message from agent
-								return &protobufs.ServerToAgent{}
-							},
-							OnConnectionClose: func(conn types.Connection) {
-								opampConnectionManager.Remove(conn)
-							},
-						},
-					}
-				},
-			},
-		},
-	}
-
-	if err := opampServer.Start(settings); err != nil {
-		panic(err)
-	}
-
-	ha := &HandlerAdapter{
-		client:                client,
-		logger:                logger,
-		valkeyAdapter:         va,
-		publisher:             pub,
-		retryMaxTime:          10 * time.Second,
-		opAmpServer:           opampServer,
-		opAmpAgentConnections: opampConnectionManager,
+		client:                 client,
+		logger:                 logger,
+		valkeyAdapter:          va,
+		publisher:              pub,
+		retryMaxTime:           10 * time.Second,
+		opampConnectionManager: connManager,
 	}
 
 	return ha
 }
-
-//Important Architectural Note
-//In OpAMP, many servers prefer to be stateless. Instead of forcing a "push" command, you can use the Next Message pattern:
-//
-//When you want an agent to restart, you flag it in your database.
-//
-//The next time that specific agent sends a heartbeat (an AgentToServer message), your OnMessage callback checks the database.
-//
-//You return the CommandType_Restart inside the return value of the OnMessage function.
-//
-//This is often more robust than maintaining a live websocket pool, especially if you have multiple server nodes behind a load balancer.
 
 // AddElementToSet adds an element to a Set data type and logs an audit entry.
 func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string, hubName string, value string, correlationId string, recursionDepth int) error {
@@ -168,7 +76,7 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 
 	// tell the gateway collector(s) to restart to receive updated config after updating the set variable
 	// TODO: debug/info logging
-	if err := r.opAmpAgentConnections.SendRestartCommand(ctx); err != nil {
+	if err := r.opampConnectionManager.DispatchRestartCommand(ctx); err != nil {
 		return err
 	}
 	return retryWithBackoff(ctx, func() error {
@@ -197,7 +105,7 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 	}
 
 	// tell the gateway collector(s) to restart to receive updated config after updating the set variable
-	if err := r.opAmpAgentConnections.SendRestartCommand(ctx); err != nil {
+	if err := r.opampConnectionManager.DispatchRestartCommand(ctx); err != nil {
 		return err
 	}
 	return retryWithBackoff(ctx, func() error {
