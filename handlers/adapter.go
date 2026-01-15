@@ -14,7 +14,6 @@ import (
 	"github.com/decisiveai/mdai-data-core/audit"
 	"github.com/decisiveai/mdai-data-core/eventing"
 	"github.com/decisiveai/mdai-data-core/eventing/publisher"
-	"github.com/decisiveai/mdai-data-core/opamp"
 	variables "github.com/decisiveai/mdai-data-core/variables"
 	"github.com/valkey-io/valkey-go"
 	"go.uber.org/zap"
@@ -39,25 +38,23 @@ const (
 // value is the element to be added to the data type.
 // correlationId is used for tracking and auditing purposes.
 type HandlerAdapter struct {
-	client                 valkey.Client
-	logger                 *zap.Logger
-	valkeyAdapter          *variables.ValkeyAdapter
-	publisher              publisher.Publisher
-	retryMaxTime           time.Duration
-	opampConnectionManager opamp.ConnectionManager
+	client        valkey.Client
+	logger        *zap.Logger
+	valkeyAdapter *variables.ValkeyAdapter
+	publisher     publisher.Publisher
+	retryMaxTime  time.Duration
 }
 
 // NewHandlerAdapter creates a new wrapper for handling variable operations.
-func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, connManager opamp.ConnectionManager, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
+func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
 	va := variables.NewValkeyAdapter(client, logger, opts...)
 
 	ha := &HandlerAdapter{
-		client:                 client,
-		logger:                 logger,
-		valkeyAdapter:          va,
-		publisher:              pub,
-		retryMaxTime:           10 * time.Second,
-		opampConnectionManager: connManager,
+		client:        client,
+		logger:        logger,
+		valkeyAdapter: va,
+		publisher:     pub,
+		retryMaxTime:  10 * time.Second,
 	}
 
 	return ha
@@ -74,11 +71,6 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 		return err
 	}
 
-	// tell the gateway collector(s) to restart to receive updated config after updating the set variable
-	// TODO: debug/info logging
-	if err := r.opampConnectionManager.DispatchRestartCommand(ctx); err != nil {
-		return err
-	}
 	return retryWithBackoff(ctx, func() error {
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
@@ -104,10 +96,6 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 		return err
 	}
 
-	// tell the gateway collector(s) to restart to receive updated config after updating the set variable
-	if err := r.opampConnectionManager.DispatchRestartCommand(ctx); err != nil {
-		return err
-	}
 	return retryWithBackoff(ctx, func() error {
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
