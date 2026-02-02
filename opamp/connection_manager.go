@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
+	"go.uber.org/zap"
 	"sync"
 	"time"
 )
@@ -24,10 +25,22 @@ type AgentConnectionManager struct {
 	connections map[types.Connection]string // Keyed by the connection to the instanceID
 }
 
-func NewAgentConnectionManager() *AgentConnectionManager {
-	return &AgentConnectionManager{
+func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentConnectionManager {
+	manager := &AgentConnectionManager{
 		connections: make(map[types.Connection]string),
 	}
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			logger.Info("AgentConnectionManager shutting down")
+			return
+		case <-time.After(30 * time.Second):
+			logger.Info("agents connected", zap.Int("num", len(manager.connections)))
+		}
+	}()
+
+	return manager
 }
 
 func (m *AgentConnectionManager) AddConnection(conn types.Connection, id string) {
