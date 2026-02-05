@@ -14,6 +14,7 @@ require (
 	github.com/nats-io/nuid v1.0.1
 	github.com/open-telemetry/opamp-go v0.22.0
 	github.com/prometheus/alertmanager v0.28.1
+	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	github.com/synadia-io/orbit.go/pcgroups v0.1.0
 	github.com/valkey-io/valkey-go v1.0.62

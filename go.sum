@@ -105,6 +105,8 @@ github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0leargg
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
 github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
+github.com/samber/lo v1.52.0 h1:Rvi+3BFHES3A8meP33VPAxiBZX/Aws5RxrschYGjomw=
+github.com/samber/lo v1.52.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c h1:aqg5Vm5dwtvL+YgDpBcK1ITf3o96N/K7/wsRXQnUTEs=
 github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c/go.mod h1:owqhoLW1qZoYLZzLnBw+QkPP9WZnjlSWihhxAJC1+/M=
 github.com/shurcooL/vfsgen v0.0.0-20230704071429-0000e147ea92 h1:OfRzdxCzDhp+rsKWXuOO2I/quKMJ/+TQwVbIP/gltZg=

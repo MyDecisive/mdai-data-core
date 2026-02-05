@@ -2,7 +2,9 @@ package kube
 
 import (
 	"fmt"
+	"github.com/samber/lo"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/dynamic"
@@ -31,6 +33,8 @@ var (
 	errConfigMapCache    = fmt.Errorf("failed to populate ConfigMap cache")
 	errUnsupportedCmType = fmt.Errorf("unsupported ConfigMap type")
 	errNoHubNamLabel     = fmt.Errorf("ConfigMap does not have hub name label")
+
+	supportedConfigMapTypes = []string{EnvConfigMapType, ManualEnvConfigMapType, AutomationConfigMapType}
 )
 
 type ConfigMapStore interface {
@@ -46,7 +50,6 @@ type ConfigMapController struct {
 	InformerFactory informers.SharedInformerFactory
 	CmInformer      coreinformers.ConfigMapInformer
 	namespace       string
-	configMapType   string
 	Logger          *zap.Logger
 	stopCh          chan struct{}
 }
@@ -65,24 +68,22 @@ func (cmc *ConfigMapController) Stop() {
 	close(cmc.stopCh)
 }
 
-func NewConfigMapController(configMapType string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*ConfigMapController, error) {
-
-	defaultResyncTime := time.Hour * 24
-
-	var informerFactory informers.SharedInformerFactory
-	switch configMapType {
-	case EnvConfigMapType, ManualEnvConfigMapType, AutomationConfigMapType:
-		informerFactory = informers.NewSharedInformerFactoryWithOptions(
-			clientset,
-			defaultResyncTime,
-			informers.WithNamespace(namespace),
-			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-				opts.LabelSelector = fmt.Sprintf("%s=%s", ConfigMapTypeLabel, configMapType)
-			}),
-		)
-	default:
+func NewConfigMapController(configMapTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*ConfigMapController, error) {
+	unsupportedTypes := lo.Filter(configMapTypes, func(item string, _ int) bool {
+		return !lo.Contains(supportedConfigMapTypes, item)
+	})
+	if len(unsupportedTypes) > 0 {
 		return nil, errUnsupportedCmType
 	}
+
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(
+		clientset,
+		time.Hour*24,
+		informers.WithNamespace(namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
+		}),
+	)
 
 	cmInformer := informerFactory.Core().V1().ConfigMaps()
 
@@ -104,7 +105,6 @@ func NewConfigMapController(configMapType string, namespace string, clientset ku
 
 	c := &ConfigMapController{
 		namespace:       namespace,
-		configMapType:   configMapType,
 		InformerFactory: informerFactory,
 		CmInformer:      cmInformer,
 		Logger:          logger,
@@ -208,10 +208,10 @@ func (cmc *ConfigMapController) GetConfigMapByHubName(hubName string) (*v1.Confi
 		return nil, fmt.Errorf("getting hub by index: %w", err)
 	}
 	if len(objs) == 0 {
-		return nil, fmt.Errorf("no ConfigMap %s found for hub: %s", cmc.configMapType, hubName)
+		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	}
 	if len(objs) > 1 {
-		return nil, fmt.Errorf("multiple ConfigMaps %s found for the same hub: %s", cmc.configMapType, hubName)
+		return nil, fmt.Errorf("multiple ConfigMaps found for the same hub: %s", hubName)
 	}
 	cm, ok := objs[0].(*v1.ConfigMap)
 	if !ok {
