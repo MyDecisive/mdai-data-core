@@ -149,9 +149,9 @@ func (t CommandType) Valid() bool    { _, ok := validCommandTypes[t]; return ok 
 func ParseCommandType(s string) (CommandType, error) {
 	t := CommandType(s)
 	if !t.Valid() {
-		var allowed []string
-		for _, v := range AllCommandTypes {
-			allowed = append(allowed, string(v))
+		allowed := make([]string, len(AllCommandTypes))
+		for i, v := range AllCommandTypes {
+			allowed[i] = string(v)
 		}
 		return "", fmt.Errorf("invalid command type %q (allowed: %s)", s, strings.Join(allowed, ", "))
 	}

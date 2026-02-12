@@ -2,10 +2,11 @@ package kube
 
 import (
 	"fmt"
-	"github.com/samber/lo"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"k8s.io/client-go/dynamic"
 
@@ -89,14 +90,12 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 
 	if err := cmInformer.Informer().AddIndexers(map[string]cache.IndexFunc{
 		ByHub: func(obj interface{}) ([]string, error) {
-			var hubNames []string
 			hubName, err := getHubName(obj.(*v1.ConfigMap))
 			if err != nil {
 				logger.Error("failed to get hub name for ConfigMap", zap.String("ConfigMap name", obj.(*v1.ConfigMap).Name))
 				return nil, err
 			}
-			hubNames = append(hubNames, hubName)
-			return hubNames, nil
+			return []string{hubName}, nil
 		},
 	}); err != nil {
 		logger.Error("failed to add index", zap.Error(err))

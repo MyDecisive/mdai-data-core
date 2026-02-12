@@ -103,11 +103,10 @@ func setupOTel(ctx context.Context, internalLogger *zap.Logger) (ShutdownFunc, e
 		return nil, nil
 	}
 
-	var shutdownFuncs []ShutdownFunc
-
 	otel.SetErrorHandler(&ZapErrorHandler{logger: internalLogger})
 
 	var err error
+	shutdownFuncs := make([]ShutdownFunc, 0, 1)
 	// shutdown calls cleanup functions registered via shutdownFuncs.
 	// The errors from the calls are joined.
 	// Each registered cleanup will be invoked once.

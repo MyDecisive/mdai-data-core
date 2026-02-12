@@ -2,11 +2,12 @@ package opamp
 
 import (
 	"context"
+	"sync"
+	"time"
+
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 	"go.uber.org/zap"
-	"sync"
-	"time"
 )
 
 // TODO: mockery generate mock

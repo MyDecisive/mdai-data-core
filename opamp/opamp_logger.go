@@ -2,6 +2,7 @@ package opamp
 
 import (
 	"context"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	"go.uber.org/zap"
 )
