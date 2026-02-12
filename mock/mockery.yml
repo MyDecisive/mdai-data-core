@@ -7,6 +7,6 @@ pkgname: '{{.SrcPackageName}}mock'
 recursive: false
 template: testify
 packages:
-  github.com/MyDecisive/mdai-data-core/opamp:
+  github.com/mydecisive/mdai-data-core/opamp:
     interfaces:
       ConnectionManager:

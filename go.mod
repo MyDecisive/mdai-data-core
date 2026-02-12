@@ -1,4 +1,4 @@
-module github.com/decisiveai/mdai-data-core
+module github.com/mydecisive/mdai-data-core
 
 go 1.24.0
 
@@ -6,6 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
+	github.com/decisiveai/mdai-data-core v0.2.9
 	github.com/deckarep/golang-set/v2 v2.8.0
 	github.com/google/uuid v1.6.0
 	github.com/kelseyhightower/envconfig v1.4.0
