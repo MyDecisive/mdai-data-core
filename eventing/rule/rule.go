@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decisiveai/mdai-data-core/eventing/triggers"
+	"github.com/mydecisive/mdai-data-core/eventing/triggers"
 )
 
 // Rule represents a rule that triggers a set of commands when a certain event occurs.

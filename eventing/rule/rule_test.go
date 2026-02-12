@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/decisiveai/mdai-data-core/eventing/triggers"
+	"github.com/mydecisive/mdai-data-core/eventing/triggers"
 	"github.com/stretchr/testify/assert"
 )
 

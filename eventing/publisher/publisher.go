@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/decisiveai/mdai-data-core/eventing"
-	"github.com/decisiveai/mdai-data-core/eventing/config"
+	"github.com/mydecisive/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing/config"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/zap"

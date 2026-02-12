@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/decisiveai/mdai-data-core/audit"
-	"github.com/decisiveai/mdai-data-core/eventing"
-	"github.com/decisiveai/mdai-data-core/eventing/publisher"
-	variables "github.com/decisiveai/mdai-data-core/variables"
+	"github.com/mydecisive/mdai-data-core/audit"
+	"github.com/mydecisive/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing/publisher"
+	variables "github.com/mydecisive/mdai-data-core/variables"
 	"github.com/valkey-io/valkey-go"
 	"go.uber.org/zap"
 )

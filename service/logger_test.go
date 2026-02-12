@@ -60,7 +60,7 @@ func TestInitLogger_LogLevel(t *testing.T) {
 		t.Setenv(otelSdkDisabledEnvVar, "true") // avoid extra OTel logs for this test
 
 		lines := captureStdout(t, func() {
-			internal, logger, cleanup := InitLogger(context.Background(), "github.com/decisiveai/test-svc")
+			internal, logger, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
 			assert.NotNil(t, internal)
 			assert.NotNil(t, logger)
 
@@ -99,7 +99,7 @@ func TestInitLogger_LogLevel(t *testing.T) {
 		t.Setenv(otelSdkDisabledEnvVar, "true") // avoid extra OTel logs for this test
 
 		lines := captureStdout(t, func() {
-			internal, logger, cleanup := InitLogger(context.Background(), "github.com/decisiveai/test-svc")
+			internal, logger, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
 			assert.NotNil(t, internal)
 			assert.NotNil(t, logger)
 
@@ -135,7 +135,7 @@ func TestInitLogger_OTelDisabled(t *testing.T) {
 	t.Setenv(otelSdkDisabledEnvVar, "true")
 
 	lines := captureStdout(t, func() {
-		_, _, cleanup := InitLogger(context.Background(), "github.com/decisiveai/test-svc")
+		_, _, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
 		defer cleanup()
 	})
 
@@ -149,7 +149,7 @@ func TestInitLogger_OTelNoEndpointWarning(t *testing.T) {
 	t.Setenv(otelExporterOtlpEndpointEnvVar, "")
 
 	lines := captureStdout(t, func() {
-		_, _, cleanup := InitLogger(context.Background(), "github.com/decisiveai/test-svc")
+		_, _, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
 		defer cleanup()
 	})
 
@@ -177,7 +177,7 @@ func TestInitLogger_OTelEndpointSet(t *testing.T) {
 	t.Setenv(otelExporterOtlpEndpointEnvVar, "http://localhost:4318")
 
 	lines := captureStdout(t, func() {
-		_, _, cleanup := InitLogger(context.Background(), "github.com/decisiveai/test-svc")
+		_, _, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
 		defer cleanup()
 	})
 

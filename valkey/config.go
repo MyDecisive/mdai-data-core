@@ -3,7 +3,7 @@ package valkey
 import (
 	"time"
 
-	"github.com/decisiveai/mdai-data-core/helpers"
+	"github.com/mydecisive/mdai-data-core/helpers"
 )
 
 const (

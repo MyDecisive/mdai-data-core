@@ -26,7 +26,7 @@ const (
 
 // InitLogger initializes a logger with OTel and returns the internal and external logger instances.
 // It also returns a cleanup function to close the logger resources.
-// serviceName is the mdai service name of the service in the format "github.com/decisiveai/service-name"
+// serviceName is the mdai service name of the service in the format "github.com/mydecisive/service-name"
 // internalLogger is for logging to stdout only, while appLogger is for logging through OTEL SDK.
 // Use LOG_LEVEL environment variable to change the log level.
 func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Logger, appLogger *zap.Logger, cleanup func()) { //nolint:nonamedreturns

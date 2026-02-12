@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/decisiveai/mdai-data-core/kube"
+	"github.com/mydecisive/mdai-data-core/kube"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

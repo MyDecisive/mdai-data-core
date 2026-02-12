@@ -1,4 +1,4 @@
-[![Chores](https://github.com/DecisiveAI/mdai-data-core/actions/workflows/chores.yml/badge.svg)](https://github.com/DecisiveAI/mdai-data-core/actions/workflows/chores.yml) [![codecov](https://codecov.io/gh/DecisiveAI/mdai-data-core/graph/badge.svg?token=UPHRBSXOON)](https://codecov.io/gh/DecisiveAI/mdai-data-core)
+[![Chores](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml/badge.svg)](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml) [![codecov](https://codecov.io/gh/DecisiveAI/mdai-data-core/graph/badge.svg?token=UPHRBSXOON)](https://codecov.io/gh/DecisiveAI/mdai-data-core)
 
 # mdai-data-core
 
@@ -12,7 +12,7 @@ It simplifies:
 
 ## Installation
 ```shell
-go get github.com/decisiveai/mdai-data-core
+go get github.com/mydecisive/mdai-data-core
 ```
 
 ## Usage
@@ -24,7 +24,7 @@ package main
 import (
 	"context"
 
-	datacore "github.com/decisiveai/mdai-data-core/variables"
+	datacore "github.com/mydecisive/mdai-data-core/variables"
 )
 
 func main() {
