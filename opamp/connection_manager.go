@@ -10,8 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: mockery generate mock
-
 type ConnectionManager interface {
 	AddConnection(conn types.Connection, id string)
 	RemoveConnection(conn types.Connection)
