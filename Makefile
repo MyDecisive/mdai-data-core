@@ -1,4 +1,4 @@
-.PHONY: test test-race tidy vendor generate install-mockgen
+.PHONY: test test-race tidy vendor generate install-mocks
 
 test: tidy vendor
 	CGO_ENABLED=0 go test -mod=vendor -v -count=1 ./...
@@ -15,5 +15,6 @@ vendor:
 generate:
 	go generate ./...
 
-install-mockgen:
+install-mocks:
 	go install go.uber.org/mock/mockgen@v0.6.0
+	go install github.com/vektra/mockery/v3@v3.5.4
