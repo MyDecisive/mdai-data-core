@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decisiveai/mdai-data-core/eventing/triggers"
+	"github.com/mydecisive/mdai-data-core/eventing/triggers"
 )
 
 // Rule represents a rule that triggers a set of commands when a certain event occurs.
@@ -149,9 +149,9 @@ func (t CommandType) Valid() bool    { _, ok := validCommandTypes[t]; return ok 
 func ParseCommandType(s string) (CommandType, error) {
 	t := CommandType(s)
 	if !t.Valid() {
-		var allowed []string
-		for _, v := range AllCommandTypes {
-			allowed = append(allowed, string(v))
+		allowed := make([]string, len(AllCommandTypes))
+		for i, v := range AllCommandTypes {
+			allowed[i] = string(v)
 		}
 		return "", fmt.Errorf("invalid command type %q (allowed: %s)", s, strings.Join(allowed, ", "))
 	}

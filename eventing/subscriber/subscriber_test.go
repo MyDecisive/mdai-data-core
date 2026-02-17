@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/decisiveai/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"

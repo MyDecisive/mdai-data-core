@@ -1,4 +1,4 @@
-module github.com/decisiveai/mdai-data-core
+module github.com/mydecisive/mdai-data-core
 
 go 1.24.0
 
@@ -12,7 +12,9 @@ require (
 	github.com/nats-io/nats-server/v2 v2.11.8
 	github.com/nats-io/nats.go v1.45.0
 	github.com/nats-io/nuid v1.0.1
+	github.com/open-telemetry/opamp-go v0.22.0
 	github.com/prometheus/alertmanager v0.28.1
+	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	github.com/synadia-io/orbit.go/pcgroups v0.1.0
 	github.com/valkey-io/valkey-go v1.0.62
@@ -25,6 +27,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.14.0
 	go.uber.org/mock v0.5.2
 	go.uber.org/zap v1.27.0
+	golang.org/x/sync v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.33.2
 	k8s.io/apimachinery v0.33.2
@@ -66,6 +69,7 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20230704071429-0000e147ea92 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect

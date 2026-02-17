@@ -18,7 +18,7 @@ import (
 	"github.com/synadia-io/orbit.go/pcgroups"
 	"go.uber.org/zap"
 
-	"github.com/decisiveai/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing"
 )
 
 const (

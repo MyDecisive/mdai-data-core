@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/decisiveai/mdai-data-core/audit"
-	"github.com/decisiveai/mdai-data-core/eventing"
-	"github.com/decisiveai/mdai-data-core/eventing/publisher"
-	variables "github.com/decisiveai/mdai-data-core/variables"
+	"github.com/mydecisive/mdai-data-core/audit"
+	"github.com/mydecisive/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing/publisher"
+	variables "github.com/mydecisive/mdai-data-core/variables"
 	"github.com/valkey-io/valkey-go"
 	"go.uber.org/zap"
 )
@@ -48,6 +48,7 @@ type HandlerAdapter struct {
 // NewHandlerAdapter creates a new wrapper for handling variable operations.
 func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
 	va := variables.NewValkeyAdapter(client, logger, opts...)
+
 	ha := &HandlerAdapter{
 		client:        client,
 		logger:        logger,
@@ -69,6 +70,7 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
 		return err
 	}
+
 	return retryWithBackoff(ctx, func() error {
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
@@ -93,6 +95,7 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
 		return err
 	}
+
 	return retryWithBackoff(ctx, func() error {
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,

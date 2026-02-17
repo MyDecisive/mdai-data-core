@@ -67,7 +67,7 @@ func TestNewConfigMapController_SingleNs(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1, configMap2, configMap3)
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, "second", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "second", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -149,7 +149,7 @@ func TestNewConfigMapController_MultipleNs(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1, configMap2, configMap3)
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, corev1.NamespaceAll, clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, corev1.NamespaceAll, clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -205,7 +205,7 @@ func TestNewConfigMapController_NonExistentCmType(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1)
 
-	cmController, err := NewConfigMapController("hub-nonexistent-cm-type", "second", clientset, logger)
+	cmController, err := NewConfigMapController([]string{"hub-nonexistent-cm-type"}, "second", clientset, logger)
 	require.Nil(t, cmController)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported ConfigMap type")
@@ -230,7 +230,7 @@ func TestGetHubData(t *testing.T) {
 	}
 	clientset := fake.NewClientset(configMap)
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, "first", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "first", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -310,7 +310,7 @@ func TestGetAllHubsToDataMap(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1, configMap2, configMap3)
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, "second", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "second", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -344,7 +344,7 @@ func TestGetConfigMapByHubName_NotFound(t *testing.T) {
 	var logger = zap.NewNop()
 	clientset := fake.NewClientset()
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, "first", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "first", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -359,7 +359,7 @@ func TestGetConfigMapByHubName_NotFound(t *testing.T) {
 		if err == nil {
 			return false
 		}
-		return assert.Contains(t, err.Error(), "no ConfigMap hub-manual-variables found for hub: non-existent-hub")
+		return assert.Contains(t, err.Error(), "no ConfigMap found for hub: non-existent-hub")
 	}, time.Second, 100*time.Millisecond, "Expected error for non-existent hub")
 }
 
@@ -383,7 +383,7 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 			Name:      "mdaihub-second-manual-variables",
 			Namespace: "first",
 			Labels: map[string]string{
-				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				ConfigMapTypeLabel: EnvConfigMapType,
 				LabelMdaiHubName:   hubName,
 			},
 		},
@@ -391,7 +391,7 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1, configMap2)
 
-	cmController, err := NewConfigMapController(ManualEnvConfigMapType, "first", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType, EnvConfigMapType}, "first", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
@@ -409,7 +409,7 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 		if err == nil {
 			return false
 		}
-		return assert.Contains(t, err.Error(), "multiple ConfigMaps hub-manual-variables found for the same hub: shared-hub")
+		return assert.Contains(t, err.Error(), "multiple ConfigMaps found for the same hub: shared-hub")
 	}, time.Second, 100*time.Millisecond, "Expected error for multiple config maps")
 }
 

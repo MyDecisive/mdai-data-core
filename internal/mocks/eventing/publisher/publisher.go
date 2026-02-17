@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	eventing "github.com/decisiveai/mdai-data-core/eventing"
+	eventing "github.com/mydecisive/mdai-data-core/eventing"
 	gomock "go.uber.org/mock/gomock"
 )
 
