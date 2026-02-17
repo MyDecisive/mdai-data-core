@@ -2,9 +2,10 @@ package opamp
 
 import (
 	"context"
-	"golang.org/x/sync/errgroup"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
