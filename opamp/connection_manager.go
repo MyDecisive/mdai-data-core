@@ -2,6 +2,7 @@ package opamp
 
 import (
 	"context"
+	"golang.org/x/sync/errgroup"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// ConnectionManager is for managing connected agents for an opamp server.
 type ConnectionManager interface {
 	AddConnection(conn types.Connection, id string)
 	RemoveConnection(conn types.Connection)
@@ -29,35 +31,44 @@ func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentCo
 		connections: make(map[types.Connection]string),
 	}
 
-	go func() {
-		select {
-		case <-ctx.Done():
-			logger.Info("AgentConnectionManager shutting down")
-			return
-		case <-time.After(30 * time.Second):
-			logger.Info("agents connected", zap.Int("num", len(manager.connections)))
-		}
-	}()
+	if logger.Level() == zap.DebugLevel {
+		connectedAgentsTimer := time.Tick(30 * time.Second)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					logger.Debug("AgentConnectionManager shutting down")
+					return
+				case <-connectedAgentsTimer:
+					logger.Debug("agents connected", zap.Int("num", len(manager.connections)))
+				}
+			}
+		}()
+	}
 
 	return manager
 }
 
+// AddConnection adds a new connection to the list of underlying connected agents.
 func (m *AgentConnectionManager) AddConnection(conn types.Connection, id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.connections[conn] = id
 }
 
+// RemoveConnection removes the provided opamp connection from the list of underlying connected agents.
 func (m *AgentConnectionManager) RemoveConnection(conn types.Connection) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.connections, conn)
 }
 
+// DispatchRestartCommand sends the CommandType_Restart event to all connected opamp agents.
 func (m *AgentConnectionManager) DispatchRestartCommand(ctx context.Context) error {
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-	defer cancel()
+	g, errCtx := errgroup.WithContext(ctx)
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	for conn, id := range m.connections {
 		cmd := &protobufs.ServerToAgent{
 			InstanceUid: []byte(id),
@@ -66,9 +77,10 @@ func (m *AgentConnectionManager) DispatchRestartCommand(ctx context.Context) err
 			},
 		}
 
-		if err := conn.Send(timeoutCtx, cmd); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return conn.Send(errCtx, cmd)
+		})
 	}
-	return nil
+
+	return g.Wait()
 }

@@ -383,7 +383,7 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 			Name:      "mdaihub-second-manual-variables",
 			Namespace: "first",
 			Labels: map[string]string{
-				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				ConfigMapTypeLabel: EnvConfigMapType,
 				LabelMdaiHubName:   hubName,
 			},
 		},
@@ -391,7 +391,7 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 
 	clientset := fake.NewClientset(configMap1, configMap2)
 
-	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "first", clientset, logger)
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType, EnvConfigMapType}, "first", clientset, logger)
 	require.NoError(t, err)
 
 	err = cmController.Run()
