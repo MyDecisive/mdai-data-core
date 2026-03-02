@@ -7,6 +7,7 @@ package opampmock
 import (
 	"context"
 
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -39,8 +40,8 @@ func (_m *MockConnectionManager) EXPECT() *MockConnectionManager_Expecter {
 }
 
 // AddConnection provides a mock function for the type MockConnectionManager
-func (_mock *MockConnectionManager) AddConnection(conn types.Connection, id string) {
-	_mock.Called(conn, id)
+func (_mock *MockConnectionManager) AddConnection(conn types.Connection, message *protobufs.AgentToServer) {
+	_mock.Called(conn, message)
 	return
 }
 
@@ -51,20 +52,20 @@ type MockConnectionManager_AddConnection_Call struct {
 
 // AddConnection is a helper method to define mock.On call
 //   - conn types.Connection
-//   - id string
-func (_e *MockConnectionManager_Expecter) AddConnection(conn interface{}, id interface{}) *MockConnectionManager_AddConnection_Call {
-	return &MockConnectionManager_AddConnection_Call{Call: _e.mock.On("AddConnection", conn, id)}
+//   - message *protobufs.AgentToServer
+func (_e *MockConnectionManager_Expecter) AddConnection(conn interface{}, message interface{}) *MockConnectionManager_AddConnection_Call {
+	return &MockConnectionManager_AddConnection_Call{Call: _e.mock.On("AddConnection", conn, message)}
 }
 
-func (_c *MockConnectionManager_AddConnection_Call) Run(run func(conn types.Connection, id string)) *MockConnectionManager_AddConnection_Call {
+func (_c *MockConnectionManager_AddConnection_Call) Run(run func(conn types.Connection, message *protobufs.AgentToServer)) *MockConnectionManager_AddConnection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 types.Connection
 		if args[0] != nil {
 			arg0 = args[0].(types.Connection)
 		}
-		var arg1 string
+		var arg1 *protobufs.AgentToServer
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(*protobufs.AgentToServer)
 		}
 		run(
 			arg0,
@@ -79,7 +80,7 @@ func (_c *MockConnectionManager_AddConnection_Call) Return() *MockConnectionMana
 	return _c
 }
 
-func (_c *MockConnectionManager_AddConnection_Call) RunAndReturn(run func(conn types.Connection, id string)) *MockConnectionManager_AddConnection_Call {
+func (_c *MockConnectionManager_AddConnection_Call) RunAndReturn(run func(conn types.Connection, message *protobufs.AgentToServer)) *MockConnectionManager_AddConnection_Call {
 	_c.Run(run)
 	return _c
 }
@@ -131,6 +132,57 @@ func (_c *MockConnectionManager_DispatchRestartCommand_Call) Return(err error) *
 }
 
 func (_c *MockConnectionManager_DispatchRestartCommand_Call) RunAndReturn(run func(ctx context.Context) error) *MockConnectionManager_DispatchRestartCommand_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IsAgentManaged provides a mock function for the type MockConnectionManager
+func (_mock *MockConnectionManager) IsAgentManaged(agentName string) bool {
+	ret := _mock.Called(agentName)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsAgentManaged")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(string) bool); ok {
+		r0 = returnFunc(agentName)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockConnectionManager_IsAgentManaged_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsAgentManaged'
+type MockConnectionManager_IsAgentManaged_Call struct {
+	*mock.Call
+}
+
+// IsAgentManaged is a helper method to define mock.On call
+//   - agentName string
+func (_e *MockConnectionManager_Expecter) IsAgentManaged(agentName interface{}) *MockConnectionManager_IsAgentManaged_Call {
+	return &MockConnectionManager_IsAgentManaged_Call{Call: _e.mock.On("IsAgentManaged", agentName)}
+}
+
+func (_c *MockConnectionManager_IsAgentManaged_Call) Run(run func(agentName string)) *MockConnectionManager_IsAgentManaged_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockConnectionManager_IsAgentManaged_Call) Return(b bool) *MockConnectionManager_IsAgentManaged_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockConnectionManager_IsAgentManaged_Call) RunAndReturn(run func(agentName string) bool) *MockConnectionManager_IsAgentManaged_Call {
 	_c.Call.Return(run)
 	return _c
 }
