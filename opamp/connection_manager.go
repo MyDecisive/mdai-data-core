@@ -2,9 +2,10 @@ package opamp
 
 import (
 	"context"
-	mapset "github.com/deckarep/golang-set/v2"
 	"sync"
 	"time"
+
+	mapset "github.com/deckarep/golang-set/v2"
 
 	"golang.org/x/sync/errgroup"
 
@@ -63,7 +64,7 @@ func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentCo
 
 // AddConnection adds a new connection to the list of underlying connected agents.
 func (m *AgentConnectionManager) AddConnection(conn types.Connection, message *protobufs.AgentToServer) {
-	var collectorName string
+	collectorName := string(message.GetInstanceUid())
 	for _, attr := range message.GetAgentDescription().GetNonIdentifyingAttributes() {
 		if attr.GetKey() == "host.name" {
 			collectorName = attr.GetValue().GetStringValue()
@@ -77,6 +78,7 @@ func (m *AgentConnectionManager) AddConnection(conn types.Connection, message *p
 		CollectorName: collectorName,
 		ID:            string(message.GetInstanceUid()),
 	}
+
 	m.connectedAgents.Add(collectorName)
 }
 
