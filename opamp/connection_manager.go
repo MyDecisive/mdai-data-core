@@ -14,7 +14,7 @@ import (
 
 // ConnectionManager is for managing connected agents for an opamp server.
 type ConnectionManager interface {
-	AddConnection(conn types.Connection, id string)
+	AddConnection(conn types.Connection, message *protobufs.AgentToServer)
 	RemoveConnection(conn types.Connection)
 	DispatchRestartCommand(ctx context.Context) error
 }
@@ -22,14 +22,21 @@ type ConnectionManager interface {
 // enforce implementation of ConnectionManager interface.
 var _ ConnectionManager = &AgentConnectionManager{}
 
+type CollectorAgent struct {
+	ID            string
+	CollectorName string
+}
+
 type AgentConnectionManager struct {
 	mu          sync.RWMutex
-	connections map[types.Connection]string // Keyed by the connection to the instanceID
+	logger      *zap.Logger
+	connections map[types.Connection]CollectorAgent
 }
 
 func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentConnectionManager {
 	manager := &AgentConnectionManager{
-		connections: make(map[types.Connection]string),
+		connections: make(map[types.Connection]CollectorAgent),
+		logger:      logger,
 	}
 
 	if logger.Level() == zap.DebugLevel {
@@ -51,10 +58,21 @@ func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentCo
 }
 
 // AddConnection adds a new connection to the list of underlying connected agents.
-func (m *AgentConnectionManager) AddConnection(conn types.Connection, id string) {
+func (m *AgentConnectionManager) AddConnection(conn types.Connection, message *protobufs.AgentToServer) {
+	var collectorName string
+	for _, attr := range message.GetAgentDescription().GetNonIdentifyingAttributes() {
+		if attr.GetKey() == "host.name" {
+			collectorName = attr.GetValue().GetStringValue()
+		}
+	}
+	m.logger.Debug("agent connected", zap.String("name", collectorName))
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.connections[conn] = id
+	m.connections[conn] = CollectorAgent{
+		CollectorName: collectorName,
+		ID:            string(message.GetInstanceUid()),
+	}
 }
 
 // RemoveConnection removes the provided opamp connection from the list of underlying connected agents.
@@ -70,15 +88,16 @@ func (m *AgentConnectionManager) DispatchRestartCommand(ctx context.Context) err
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	for conn, id := range m.connections {
+	for conn, agent := range m.connections {
 		cmd := &protobufs.ServerToAgent{
-			InstanceUid: []byte(id),
+			InstanceUid: []byte(agent.ID),
 			Command: &protobufs.ServerToAgentCommand{
 				Type: protobufs.CommandType_CommandType_Restart,
 			},
 		}
 
 		g.Go(func() error {
+			m.logger.Debug("restarting agent", zap.String("name", agent.CollectorName))
 			return conn.Send(errCtx, cmd)
 		})
 	}
