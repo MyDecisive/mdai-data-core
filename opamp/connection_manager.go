@@ -2,6 +2,7 @@ package opamp
 
 import (
 	"context"
+	mapset "github.com/deckarep/golang-set/v2"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type ConnectionManager interface {
 	AddConnection(conn types.Connection, message *protobufs.AgentToServer)
 	RemoveConnection(conn types.Connection)
 	DispatchRestartCommand(ctx context.Context) error
+	IsAgentManaged(agentName string) bool
 }
 
 // enforce implementation of ConnectionManager interface.
@@ -28,15 +30,17 @@ type CollectorAgent struct {
 }
 
 type AgentConnectionManager struct {
-	mu          sync.RWMutex
-	logger      *zap.Logger
-	connections map[types.Connection]CollectorAgent
+	mu              sync.RWMutex
+	logger          *zap.Logger
+	connections     map[types.Connection]CollectorAgent
+	connectedAgents mapset.Set[string]
 }
 
 func NewAgentConnectionManager(ctx context.Context, logger *zap.Logger) *AgentConnectionManager {
 	manager := &AgentConnectionManager{
-		connections: make(map[types.Connection]CollectorAgent),
-		logger:      logger,
+		connections:     make(map[types.Connection]CollectorAgent),
+		connectedAgents: mapset.NewThreadUnsafeSet[string](),
+		logger:          logger,
 	}
 
 	if logger.Level() == zap.DebugLevel {
@@ -73,13 +77,27 @@ func (m *AgentConnectionManager) AddConnection(conn types.Connection, message *p
 		CollectorName: collectorName,
 		ID:            string(message.GetInstanceUid()),
 	}
+	m.connectedAgents.Add(collectorName)
 }
 
 // RemoveConnection removes the provided opamp connection from the list of underlying connected agents.
 func (m *AgentConnectionManager) RemoveConnection(conn types.Connection) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	for connection, agent := range m.connections {
+		if connection == conn {
+			m.connectedAgents.Remove(agent.CollectorName)
+		}
+	}
 	delete(m.connections, conn)
+}
+
+// IsAgentManaged checks if the provided agent name is managed by the connection manager.
+func (m *AgentConnectionManager) IsAgentManaged(agentName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.connectedAgents.Contains(agentName)
 }
 
 // DispatchRestartCommand sends the CommandType_Restart event to all connected opamp agents.
