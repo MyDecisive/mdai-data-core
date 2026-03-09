@@ -31,10 +31,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           install-mode: "binary"
-          version: v2.0.2
+          version: v2.4.0
 
   check-go-file-changes:
     name: Check if Go files changed
