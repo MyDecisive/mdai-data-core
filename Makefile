@@ -3,11 +3,11 @@ GOTOOLCHAIN ?= go1.25.0
 GO := CGO_ENABLED=0 GOTOOLCHAIN=$(GOTOOLCHAIN) go
 GO_TEST := $(GO) test -count=1
 
-test: tidy vendor
-	$(GO_TEST) -v -count=1 ./...
+test: tidy vendor generate
+	$(GO_TEST) -v ./...
 
 test-race: tidy vendor
-	$(GO_TEST) -race -mod=vendor -v -count=1 ./...
+	$(GO_TEST) -race -v ./...
 
 tidy:
 	@$(GO) mod tidy
@@ -15,7 +15,7 @@ tidy:
 vendor:
 	@$(GO) mod vendor
 
-generate:
+generate: install-mocks
 	@$(GO) generate ./...
 
 install-mocks:
@@ -23,15 +23,15 @@ install-mocks:
 	@$(GO) install github.com/vektra/mockery/v3@v3.5.4
 
 .PHONY: cover
-cover: tidy vendor
+cover: tidy vendor generate
 	$(GO_TEST) -cover ./...
 
 .PHONY: coverv
-coverv: tidy vendor
+coverv: tidy vendor generate
 	$(GO_TEST) -v -cover ./...
 
 .PHONY: coverhtml
-coverhtml:
+coverhtml: tidy vendor generate
 	@trap 'rm -f coverage.out' EXIT; \
 	$(GO_TEST) -coverprofile=coverage.out ./... && \
 	$(GO) tool cover -html=coverage.out -o coverage.html && \
