@@ -31,10 +31,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           install-mode: "binary"
-          version: v2.0.2
+          version: v2.4.0
 
   check-go-file-changes:
     name: Check if Go files changed
@@ -112,12 +112,7 @@ jobs:
 
       - name: Running Tests
         run: |
-          go install go.uber.org/mock/mockgen@v0.5.2
-          go install github.com/vektra/mockery/v3@v3.5.4
-          go generate ./...
-          go mod vendor
-          go mod tidy
-          CGO_ENABLED=0 go test -coverprofile=coverage.txt -mod=vendor -v -count=1 ./...
+          make test
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
