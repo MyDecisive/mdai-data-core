@@ -200,6 +200,44 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	assert.Nil(t, list)
 }
 
+func TestGetMetaPriorityList(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	varKey := "parent"
+	key := "variable/hub/" + varKey
+	r1, r2 := "variable/hub/ref1", "variable/hub/ref2"
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match("PRIORITYLIST.GET", key),
+		).
+		Return(vmock.Result(
+			vmock.ValkeyArray(
+				vmock.ValkeyBlobString(r1),
+				vmock.ValkeyBlobString(r2),
+			),
+		))
+
+	list, found, err := adapter.GetMetaPriorityList(ctx, varKey, "hub")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []string{r1, r2}, list)
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match("PRIORITYLIST.GET", key),
+		).
+		Return(vmock.Result(vmock.ValkeyError("WRONGTYPE_OR_NOTFOUND")))
+
+	list, found, err = adapter.GetMetaPriorityList(ctx, varKey, "hub")
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Nil(t, list)
+}
+
 func TestGetOrCreateMetaHashSet(t *testing.T) {
 	adapter, client, ctx, ctrl := newAdapterWithMock(t)
 	defer ctrl.Finish()
@@ -233,6 +271,39 @@ func TestGetOrCreateMetaHashSet(t *testing.T) {
 		Return(vmock.Result(vmock.ValkeyNil()))
 
 	got, found, err = adapter.GetOrCreateMetaHashSet(ctx, varKey, "hub", strKeyInput, setKeyInput)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Empty(t, got)
+}
+
+func TestGetMetaHashSet(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	varKey := "color"
+	key := "variable/hub/" + varKey
+	wantVal := "blue"
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match("HASHSET.LOOKUP", key),
+		).
+		Return(vmock.Result(vmock.ValkeyBlobString(wantVal)))
+
+	got, found, err := adapter.GetMetaHashSet(ctx, varKey, "hub")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, wantVal, got)
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match("HASHSET.LOOKUP", key),
+		).
+		Return(vmock.Result(vmock.ValkeyError("WRONGTYPE_OR_NOTFOUND")))
+
+	got, found, err = adapter.GetMetaHashSet(ctx, varKey, "hub")
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Empty(t, got)

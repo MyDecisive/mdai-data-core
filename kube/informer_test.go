@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,6 @@ const (
 
 func TestNewConfigMapController_SingleNs(t *testing.T) {
 	logger := zap.NewNop()
-	ctx := t.Context()
 
 	configMap1 := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,38 +74,33 @@ func TestNewConfigMapController_SingleNs(t *testing.T) {
 	require.NoError(t, err)
 	defer cmController.Stop()
 
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap1, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap2, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap3, metav1.CreateOptions{})
-	time.Sleep(100 * time.Millisecond)
-
-	// List ConfigMaps
-	configMaps, err := clientset.CoreV1().ConfigMaps("second").List(ctx, metav1.ListOptions{})
-	require.NoError(t, err)
-	assert.Len(t, configMaps.Items, 2)
-
-	indexer := cmController.CmInformer.Informer().GetIndexer()
-	hubNames := indexer.ListIndexFuncValues(ByHub)
-	assert.ElementsMatch(t, hubNames, []string{"mdaihub-second", "mdaihub-third"})
-
-	hubMap := make(map[string]*corev1.ConfigMap)
-	for _, hubName := range hubNames {
-		objs, err := indexer.ByIndex(ByHub, hubName)
+	assert.Eventually(t, func() bool {
+		cm, err := cmController.GetConfigMapByHubName("mdaihub-second")
 		if err != nil {
-			continue
+			return false
 		}
-		for _, obj := range objs {
-			cm := obj.(*corev1.ConfigMap)
-			hubMap[hubName] = cm
+		return assert.ObjectsAreEqual(configMap2, cm)
+	}, time.Second, 100*time.Millisecond, "Expected second hub ConfigMap to eventually match")
+
+	assert.Eventually(t, func() bool {
+		cm, err := cmController.GetConfigMapByHubName("mdaihub-third")
+		if err != nil {
+			return false
 		}
-	}
-	assert.Equal(t, hubMap["mdaihub-second"], configMap2)
-	assert.Equal(t, hubMap["mdaihub-third"], configMap3)
+		return assert.ObjectsAreEqual(configMap3, cm)
+	}, time.Second, 100*time.Millisecond, "Expected third hub ConfigMap to eventually match")
+
+	assert.Eventually(t, func() bool {
+		objs, err := cmController.CmInformer.Informer().GetIndexer().ByIndex(ByType, ManualEnvConfigMapType)
+		if err != nil {
+			return false
+		}
+		return len(objs) == 2
+	}, time.Second, 100*time.Millisecond, "Expected type index to include namespace-filtered config maps")
 
 }
 func TestNewConfigMapController_MultipleNs(t *testing.T) {
 	var logger = zap.NewNop()
-	ctx := t.Context()
 
 	configMap1 := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -156,36 +151,32 @@ func TestNewConfigMapController_MultipleNs(t *testing.T) {
 	defer cmController.Stop()
 	require.NoError(t, err)
 
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap1, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap2, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap3, metav1.CreateOptions{})
-	time.Sleep(100 * time.Millisecond)
-
-	// List ConfigMaps
-	configMaps, err := clientset.CoreV1().ConfigMaps(corev1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	require.NoError(t, err)
-	assert.Len(t, configMaps.Items, 3)
-
-	indexer := cmController.CmInformer.Informer().GetIndexer()
-	hubNames := indexer.ListIndexFuncValues(ByHub)
-	assert.ElementsMatch(t, hubNames, []string{"mdaihub-first", "mdaihub-second", "mdaihub-third"})
-
-	hubMap := make(map[string]*corev1.ConfigMap)
-	for _, hubName := range hubNames {
-		objs, err := indexer.ByIndex(ByHub, hubName)
+	assert.Eventually(t, func() bool {
+		cm, err := cmController.GetConfigMapByHubName("mdaihub-first")
 		if err != nil {
-			continue
+			return false
 		}
-		for _, obj := range objs {
-			cm := obj.(*corev1.ConfigMap)
-			hubMap[hubName] = cm
+		return assert.ObjectsAreEqual(configMap1, cm)
+	}, time.Second, 100*time.Millisecond, "Expected first hub ConfigMap to eventually match")
+
+	assert.Eventually(t, func() bool {
+		cm, err := cmController.GetConfigMapByHubName("mdaihub-second")
+		if err != nil {
+			return false
 		}
-	}
-	assert.Equal(t, hubMap["mdaihub-first"], configMap1)
-	assert.Equal(t, hubMap["mdaihub-second"], configMap2)
-	assert.Equal(t, hubMap["mdaihub-third"], configMap3)
+		return assert.ObjectsAreEqual(configMap2, cm)
+	}, time.Second, 100*time.Millisecond, "Expected second hub ConfigMap to eventually match")
+
+	assert.Eventually(t, func() bool {
+		cm, err := cmController.GetConfigMapByHubName("mdaihub-third")
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(configMap3, cm)
+	}, time.Second, 100*time.Millisecond, "Expected third hub ConfigMap to eventually match")
 
 }
+
 func TestNewConfigMapController_NonExistentCmType(t *testing.T) {
 	var logger = zap.NewNop()
 
@@ -211,62 +202,8 @@ func TestNewConfigMapController_NonExistentCmType(t *testing.T) {
 	require.Contains(t, err.Error(), "unsupported ConfigMap type")
 }
 
-func TestGetHubData(t *testing.T) {
-	var logger = zap.NewNop()
-	ctx := t.Context()
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mdaihub-first-manual-variables",
-			Namespace: "first",
-			Labels: map[string]string{
-				ConfigMapTypeLabel: ManualEnvConfigMapType,
-				LabelMdaiHubName:   "mdaihub-first",
-			},
-		},
-		Data: map[string]string{
-			"first_manual_variable":  "boolean",
-			"second_manual_variable": "string",
-		},
-	}
-	clientset := fake.NewClientset(configMap)
-
-	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "first", clientset, logger)
-	require.NoError(t, err)
-
-	err = cmController.Run()
-	require.NoError(t, err)
-	defer cmController.Stop()
-
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap, metav1.CreateOptions{})
-	time.Sleep(100 * time.Millisecond)
-
-	expectedHubData := []map[string]string{
-		{
-			"first_manual_variable":  "boolean",
-			"second_manual_variable": "string",
-		},
-	}
-
-	assert.Eventually(t, func() bool {
-		hubData, err := cmController.GetHubData("mdaihub-first")
-		if err != nil {
-			return false
-		}
-		return assert.ObjectsAreEqual(expectedHubData, hubData)
-	}, time.Second, 100*time.Millisecond, "Expected hub data to eventually match")
-
-	assert.Eventually(t, func() bool {
-		cm, err := cmController.GetConfigMapByHubName("mdaihub-first")
-		if err != nil {
-			return false
-		}
-		return assert.ObjectsAreEqual(configMap, cm)
-	}, time.Second, 100*time.Millisecond, "Expected hub data to eventually match")
-}
-
 func TestGetAllHubsToDataMap(t *testing.T) {
 	var logger = zap.NewNop()
-	ctx := t.Context()
 
 	configMap1 := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -317,11 +254,6 @@ func TestGetAllHubsToDataMap(t *testing.T) {
 	require.NoError(t, err)
 	defer cmController.Stop()
 
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap1, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap2, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("second").Create(ctx, configMap3, metav1.CreateOptions{})
-	time.Sleep(100 * time.Millisecond)
-
 	expectedHubData := map[string]map[string]string{
 		"mdaihub-second": {
 			"second_manual_variable": "string",
@@ -338,6 +270,215 @@ func TestGetAllHubsToDataMap(t *testing.T) {
 		}
 		return assert.ObjectsAreEqual(expectedHubData, hubData)
 	}, time.Second, 100*time.Millisecond, "Expected hub data to eventually match")
+}
+
+func TestGetAllHubsToDataMapByType(t *testing.T) {
+	var logger = zap.NewNop()
+
+	manualConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-first-manual-variables",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				LabelMdaiHubName:   "mdaihub-first",
+			},
+		},
+		Data: map[string]string{
+			"manual_variable": "string",
+		},
+	}
+	schemaConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-first-variables-schema",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: VariablesSchemaMapType,
+				LabelMdaiHubName:   "mdaihub-first",
+			},
+		},
+		Data: map[string]string{
+			"schema_variable": "boolean",
+		},
+	}
+	otherManualConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-second-manual-variables",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				LabelMdaiHubName:   "mdaihub-second",
+			},
+		},
+		Data: map[string]string{
+			"other_manual_variable": "int",
+		},
+	}
+
+	clientset := fake.NewClientset(manualConfigMap, schemaConfigMap, otherManualConfigMap)
+
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType, VariablesSchemaMapType}, "first", clientset, logger)
+	require.NoError(t, err)
+
+	err = cmController.Run()
+	require.NoError(t, err)
+	defer cmController.Stop()
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.getAllHubsToDataMapByType(ManualEnvConfigMapType)
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(map[string]map[string]string{
+			"mdaihub-first": {
+				"manual_variable": "string",
+			},
+			"mdaihub-second": {
+				"other_manual_variable": "int",
+			},
+		}, hubData)
+	}, time.Second, 100*time.Millisecond, "Expected typed hub data to include only manual variables")
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.getAllHubsToDataMapByType(VariablesSchemaMapType)
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(map[string]map[string]string{
+			"mdaihub-first": {
+				"schema_variable": "boolean",
+			},
+		}, hubData)
+	}, time.Second, 100*time.Millisecond, "Expected typed hub data to include only schema variables")
+}
+
+func TestGetAllHubsToDataMapByType_MultipleFound(t *testing.T) {
+	var logger = zap.NewNop()
+	const hubName = "shared-hub"
+
+	configMap1 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-hub-manual-variables-1",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				LabelMdaiHubName:   hubName,
+			},
+		},
+	}
+	configMap2 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-hub-manual-variables-2",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: ManualEnvConfigMapType,
+				LabelMdaiHubName:   hubName,
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(configMap1, configMap2)
+
+	cmController, err := NewConfigMapController([]string{ManualEnvConfigMapType}, "first", clientset, logger)
+	require.NoError(t, err)
+
+	err = cmController.Run()
+	require.NoError(t, err)
+	defer cmController.Stop()
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.getAllHubsToDataMapByType(ManualEnvConfigMapType)
+		if hubData != nil {
+			return false
+		}
+		if err == nil {
+			return false
+		}
+		return strings.Contains(err.Error(), "multiple ConfigMaps found for the same hub and type: shared-hub, hub-manual-variables")
+	}, time.Second, 100*time.Millisecond, "Expected error for duplicate config maps with the same hub and type")
+}
+
+func TestGetAllHubsTypedConfigMapDataHelpers(t *testing.T) {
+	var logger = zap.NewNop()
+
+	envConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-first-variables",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: EnvConfigMapType,
+				LabelMdaiHubName:   "mdaihub-first",
+			},
+		},
+		Data: map[string]string{
+			"env_variable": "string",
+		},
+	}
+	automationConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-second-automation",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: AutomationConfigMapType,
+				LabelMdaiHubName:   "mdaihub-second",
+			},
+		},
+		Data: map[string]string{
+			"automation_variable": "enabled",
+		},
+	}
+	schemaConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mdaihub-third-variables-schema",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: VariablesSchemaMapType,
+				LabelMdaiHubName:   "mdaihub-third",
+			},
+		},
+		Data: map[string]string{
+			"schema_variable": "boolean",
+		},
+	}
+
+	clientset := fake.NewClientset(envConfigMap, automationConfigMap, schemaConfigMap)
+
+	cmController, err := NewConfigMapController([]string{EnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType}, "first", clientset, logger)
+	require.NoError(t, err)
+
+	err = cmController.Run()
+	require.NoError(t, err)
+	defer cmController.Stop()
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.GetAllHubsEnvConfigMapData()
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(map[string]map[string]string{
+			"mdaihub-first": envConfigMap.Data,
+		}, hubData)
+	}, time.Second, 100*time.Millisecond, "Expected env bulk helper to return data")
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.GetAllHubsAutomationConfigMapData()
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(map[string]map[string]string{
+			"mdaihub-second": automationConfigMap.Data,
+		}, hubData)
+	}, time.Second, 100*time.Millisecond, "Expected automation bulk helper to return data")
+
+	assert.Eventually(t, func() bool {
+		hubData, err := cmController.GetAllHubsVariablesSchemaConfigMapData()
+		if err != nil {
+			return false
+		}
+		return assert.ObjectsAreEqual(map[string]map[string]string{
+			"mdaihub-third": schemaConfigMap.Data,
+		}, hubData)
+	}, time.Second, 100*time.Millisecond, "Expected variables schema bulk helper to return data")
 }
 
 func TestGetConfigMapByHubName_NotFound(t *testing.T) {
@@ -359,13 +500,12 @@ func TestGetConfigMapByHubName_NotFound(t *testing.T) {
 		if err == nil {
 			return false
 		}
-		return assert.Contains(t, err.Error(), "no ConfigMap found for hub: non-existent-hub")
+		return strings.Contains(err.Error(), "no ConfigMap found for hub: non-existent-hub")
 	}, time.Second, 100*time.Millisecond, "Expected error for non-existent hub")
 }
 
 func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 	var logger = zap.NewNop()
-	ctx := t.Context()
 	const hubName = "shared-hub"
 
 	configMap1 := &corev1.ConfigMap{
@@ -398,9 +538,6 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 	require.NoError(t, err)
 	defer cmController.Stop()
 
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap1, metav1.CreateOptions{})
-	_, _ = clientset.CoreV1().ConfigMaps("first").Create(ctx, configMap2, metav1.CreateOptions{})
-
 	assert.Eventually(t, func() bool {
 		cm, err := cmController.GetConfigMapByHubName(hubName)
 		if cm != nil {
@@ -409,8 +546,124 @@ func TestGetConfigMapByHubName_MultipleFound(t *testing.T) {
 		if err == nil {
 			return false
 		}
-		return assert.Contains(t, err.Error(), "multiple ConfigMaps found for the same hub: shared-hub")
+		return strings.Contains(err.Error(), "multiple ConfigMaps found for the same hub: shared-hub")
 	}, time.Second, 100*time.Millisecond, "Expected error for multiple config maps")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.getConfigMapDataByHubNameAndType(hubName, ManualEnvConfigMapType)
+		if err != nil || !found {
+			return false
+		}
+		return assert.ObjectsAreEqual(configMap1.Data, data)
+	}, time.Second, 100*time.Millisecond, "Expected typed lookup to return manual variables config map data")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.getConfigMapDataByHubNameAndType(hubName, EnvConfigMapType)
+		if err != nil || !found {
+			return false
+		}
+		return assert.ObjectsAreEqual(configMap2.Data, data)
+	}, time.Second, 100*time.Millisecond, "Expected typed lookup to return env variables config map data")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.getConfigMapDataByHubNameAndType(hubName, VariablesSchemaMapType)
+		if data != nil {
+			return false
+		}
+		if err != nil {
+			return false
+		}
+		return !found
+	}, time.Second, 100*time.Millisecond, "Expected typed lookup to report not found when the requested type is not cached")
+}
+
+func TestGetTypedConfigMapDataByHubNameHelpers(t *testing.T) {
+	var logger = zap.NewNop()
+	const hubName = "shared-hub"
+
+	envConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-hub-variables",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: EnvConfigMapType,
+				LabelMdaiHubName:   hubName,
+			},
+		},
+		Data: map[string]string{
+			"env_variable": "string",
+		},
+	}
+	automationConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-hub-automation",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: AutomationConfigMapType,
+				LabelMdaiHubName:   hubName,
+			},
+		},
+		Data: map[string]string{
+			"automation_variable": "enabled",
+		},
+	}
+	schemaConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-hub-variables-schema",
+			Namespace: "first",
+			Labels: map[string]string{
+				ConfigMapTypeLabel: VariablesSchemaMapType,
+				LabelMdaiHubName:   hubName,
+			},
+		},
+		Data: map[string]string{
+			"schema_variable": "boolean",
+		},
+	}
+
+	clientset := fake.NewClientset(envConfigMap, automationConfigMap, schemaConfigMap)
+
+	cmController, err := NewConfigMapController([]string{EnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType}, "first", clientset, logger)
+	require.NoError(t, err)
+
+	err = cmController.Run()
+	require.NoError(t, err)
+	defer cmController.Stop()
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.GetEnvConfigMapDataByHubName(hubName)
+		if err != nil || !found {
+			return false
+		}
+		return assert.ObjectsAreEqual(envConfigMap.Data, data)
+	}, time.Second, 100*time.Millisecond, "Expected env config map helper to return data")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.GetAutomationConfigMapDataByHubName(hubName)
+		if err != nil || !found {
+			return false
+		}
+		return assert.ObjectsAreEqual(automationConfigMap.Data, data)
+	}, time.Second, 100*time.Millisecond, "Expected automation config map helper to return data")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.GetVariablesSchemaConfigMapDataByHubName(hubName)
+		if err != nil || !found {
+			return false
+		}
+		return assert.ObjectsAreEqual(schemaConfigMap.Data, data)
+	}, time.Second, 100*time.Millisecond, "Expected variables schema config map helper to return data")
+
+	assert.Eventually(t, func() bool {
+		data, found, err := cmController.GetEnvConfigMapDataByHubName("missing-hub")
+		if data != nil {
+			return false
+		}
+		if err != nil {
+			return false
+		}
+		return !found
+	}, time.Second, 100*time.Millisecond, "Expected env config map helper to report not found for a missing hub")
 }
 
 func TestGetKubeConfig(t *testing.T) {

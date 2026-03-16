@@ -20,10 +20,11 @@ type FakeConfigMapStore struct {
 	byHub map[string][]*v1.ConfigMap
 
 	// Optional error injection points
-	RunErr                   error
-	GetAllHubsToDataMapErr   error
-	GetHubDataErr            error
-	GetConfigMapByHubNameErr error
+	RunErr                       error
+	GetAllHubsToDataMapErr       error
+	GetAllHubsToDataMapByTypeErr error
+	GetConfigMapByHubNameErr     error
+	GetConfigMapByHubAndTypeErr  error
 
 	// Lifecycle flags
 	running bool
@@ -65,8 +66,9 @@ func (f *FakeConfigMapStore) Reset() {
 	f.stopped = false
 	f.RunErr = nil
 	f.GetAllHubsToDataMapErr = nil
-	f.GetHubDataErr = nil
+	f.GetAllHubsToDataMapByTypeErr = nil
 	f.GetConfigMapByHubNameErr = nil
+	f.GetConfigMapByHubAndTypeErr = nil
 }
 
 func (f *FakeConfigMapStore) Run() error {
@@ -104,19 +106,38 @@ func (f *FakeConfigMapStore) GetAllHubsToDataMap() (map[string]map[string]string
 	return out, nil
 }
 
-func (f *FakeConfigMapStore) GetHubData(hubName string) ([]map[string]string, error) {
+func (f *FakeConfigMapStore) getAllHubsToDataMapByType(configMapType string) (map[string]map[string]string, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if f.GetHubDataErr != nil {
-		return nil, f.GetHubDataErr
+	if f.GetAllHubsToDataMapByTypeErr != nil {
+		return nil, f.GetAllHubsToDataMapByTypeErr
 	}
 
-	configMaps := f.byHub[hubName]
-	res := make([]map[string]string, 0, len(configMaps))
-	for _, cm := range configMaps {
-		res = append(res, cm.Data)
+	out := make(map[string]map[string]string)
+	for hub, cms := range f.byHub {
+		for _, cm := range cms {
+			if cm.Labels[kube.ConfigMapTypeLabel] != configMapType {
+				continue
+			}
+			if _, exists := out[hub]; exists {
+				return nil, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hub, configMapType)
+			}
+			out[hub] = cm.Data
+		}
 	}
-	return res, nil
+	return out, nil
+}
+
+func (f *FakeConfigMapStore) GetAllHubsEnvConfigMapData() (map[string]map[string]string, error) {
+	return f.getAllHubsToDataMapByType(kube.EnvConfigMapType)
+}
+
+func (f *FakeConfigMapStore) GetAllHubsAutomationConfigMapData() (map[string]map[string]string, error) {
+	return f.getAllHubsToDataMapByType(kube.AutomationConfigMapType)
+}
+
+func (f *FakeConfigMapStore) GetAllHubsVariablesSchemaConfigMapData() (map[string]map[string]string, error) {
+	return f.getAllHubsToDataMapByType(kube.VariablesSchemaMapType)
 }
 
 func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error) {
@@ -129,7 +150,7 @@ func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMa
 	configMaps := f.byHub[hubName]
 	switch len(configMaps) {
 	case 0:
-		return nil, fmt.Errorf("no ConfigMap %s found for hub: %s", "?", hubName)
+		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	case 1:
 		return configMaps[0], nil
 	default:
@@ -139,6 +160,42 @@ func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMa
 		}
 		return nil, fmt.Errorf("multiple ConfigMaps %v found for the same hub: %s", names, hubName)
 	}
+}
+
+func (f *FakeConfigMapStore) getConfigMapDataByHubNameAndType(hubName string, configMapType string) (map[string]string, bool, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.GetConfigMapByHubAndTypeErr != nil {
+		return nil, false, f.GetConfigMapByHubAndTypeErr
+	}
+
+	var matches []*v1.ConfigMap
+	for _, cm := range f.byHub[hubName] {
+		if cm.Labels[kube.ConfigMapTypeLabel] == configMapType {
+			matches = append(matches, cm)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, false, nil
+	case 1:
+		return matches[0].Data, true, nil
+	default:
+		return nil, true, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hubName, configMapType)
+	}
+}
+
+func (f *FakeConfigMapStore) GetEnvConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return f.getConfigMapDataByHubNameAndType(hubName, kube.EnvConfigMapType)
+}
+
+func (f *FakeConfigMapStore) GetAutomationConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return f.getConfigMapDataByHubNameAndType(hubName, kube.AutomationConfigMapType)
+}
+
+func (f *FakeConfigMapStore) GetVariablesSchemaConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return f.getConfigMapDataByHubNameAndType(hubName, kube.VariablesSchemaMapType)
 }
 
 func (f *FakeConfigMapStore) Running() bool {
@@ -160,12 +217,17 @@ func (f *FakeConfigMapStore) FailAllHubsWith(err error) *FakeConfigMapStore {
 	f.GetAllHubsToDataMapErr = err
 	return f
 }
-func (f *FakeConfigMapStore) FailGetHubDataWith(err error) *FakeConfigMapStore {
-	f.GetHubDataErr = err
+func (f *FakeConfigMapStore) FailAllHubsByTypeWith(err error) *FakeConfigMapStore {
+	f.GetAllHubsToDataMapByTypeErr = err
 	return f
 }
 func (f *FakeConfigMapStore) FailGetByHubWith(err error) *FakeConfigMapStore {
 	f.GetConfigMapByHubNameErr = err
+	return f
+}
+
+func (f *FakeConfigMapStore) FailGetByHubAndTypeWith(err error) *FakeConfigMapStore {
+	f.GetConfigMapByHubAndTypeErr = err
 	return f
 }
 

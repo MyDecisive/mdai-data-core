@@ -67,7 +67,7 @@ func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variabl
 	refs := r.prefixedRefs(variableRefs, hubName)
 	list, err := r.client.Do(ctx, r.client.B().Arbitrary("PRIORITYLIST.GETORCREATE").Keys(key).Args(refs...).Build()).AsStrSlice()
 	if err == nil {
-		r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, list))
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
 		return list, true, nil
 	}
 
@@ -78,13 +78,29 @@ func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variabl
 	return nil, false, err
 }
 
+func (r *ValkeyAdapter) GetMetaPriorityList(ctx context.Context, variableKey string, hubName string) ([]string, bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	list, err := r.client.Do(ctx, r.client.B().Arbitrary("PRIORITYLIST.GET").Keys(key).Build()).AsStrSlice()
+	if err == nil {
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
+		return list, true, nil
+	}
+
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), "WRONGTYPE_OR_NOTFOUND") {
+		r.logger.Info("No value found for references", zap.String("key", key))
+		return nil, false, nil
+	}
+
+	return nil, false, err
+}
+
 func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey string, hubName string, variableStringKey string, variableSetKey string) (string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	stringKey := r.composeStorageKey(variableStringKey, hubName)
 	setKey := r.composeStorageKey(variableSetKey, hubName)
 	value, err := r.client.Do(ctx, r.client.B().Arbitrary("HASHSET.GETORCREATE").Keys(key).Args(stringKey, setKey).Build()).ToString()
 	if err == nil {
-		r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, value))
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 		return value, true, nil
 	}
 
@@ -92,6 +108,22 @@ func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey 
 		r.logger.Info("No value found for references", zap.String("key", key))
 		return "", false, nil
 	}
+	return "", false, err
+}
+
+func (r *ValkeyAdapter) GetMetaHashSet(ctx context.Context, variableKey string, hubName string) (string, bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	value, err := r.client.Do(ctx, r.client.B().Arbitrary("HASHSET.LOOKUP").Keys(key).Build()).ToString()
+	if err == nil {
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
+		return value, true, nil
+	}
+
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), "WRONGTYPE_OR_NOTFOUND") {
+		r.logger.Info("No value found for references", zap.String("key", key))
+		return "", false, nil
+	}
+
 	return "", false, err
 }
 
@@ -103,7 +135,7 @@ func (r *ValkeyAdapter) GetSetAsStringSlice(ctx context.Context, variableKey str
 		return nil, err
 	}
 
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, valueAsSlice))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", valueAsSlice))
 	return valueAsSlice, nil
 }
 
@@ -120,7 +152,7 @@ func (r *ValkeyAdapter) GetString(ctx context.Context, variableKey string, hubNa
 		r.logger.Error("failed to get String value from storage", zap.Error(err), zap.String("key", key))
 		return "", false, err
 	}
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, value))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 	return value, true, nil
 }
 
@@ -149,7 +181,7 @@ func (r *ValkeyAdapter) GetMapAsString(ctx context.Context, variableKey string, 
 		return "", err
 	}
 
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, string(yamlData)))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("yaml", string(yamlData)))
 	return string(yamlData), nil
 }
 
@@ -227,7 +259,7 @@ func (r *ValkeyAdapter) DeleteKeysWithPrefixUsingScan(ctx context.Context, keep 
 		for _, k := range scanResult.Elements {
 			res, found := strings.CutPrefix(k, prefix)
 			if !found {
-				return fmt.Errorf("failed to parse prefix for key %s: %w", k, err)
+				return fmt.Errorf("key %s does not have expected prefix %s", k, prefix)
 			}
 			if _, exists := keep[res]; exists {
 				continue
