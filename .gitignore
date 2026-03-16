@@ -22,11 +22,7 @@ go.work.sum
 
 # env file
 .env
-/.idea/.gitignore
-/.idea/mdai-data-core.iml
-/.idea/modules.xml
-/.idea/vcs.xml
-/.idea/golinter.xml
+.idea
 
 .DS_Store
 **/.DS_Store
