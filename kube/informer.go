@@ -268,7 +268,7 @@ func (cmc *ConfigMapController) GetAllHubsVariablesSchemaConfigMapData() (map[st
 // GetConfigMapByHubName returns the only ConfigMap found for the given hub name.
 // Still used in event hub
 func (cmc *ConfigMapController) GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error) {
-	var matchedConfigMaps []*v1.ConfigMap
+	var matchedConfigMap *v1.ConfigMap
 	for _, obj := range cmc.CmInformer.Informer().GetIndexer().List() {
 		cm, ok := obj.(*v1.ConfigMap)
 		if !ok {
@@ -285,16 +285,18 @@ func (cmc *ConfigMapController) GetConfigMapByHubName(hubName string) (*v1.Confi
 			continue
 		}
 
-		matchedConfigMaps = append(matchedConfigMaps, cm)
+		if matchedConfigMap != nil {
+			return nil, fmt.Errorf("multiple ConfigMaps found for the same hub: %s", hubName)
+		}
+
+		matchedConfigMap = cm
 	}
 
-	if len(matchedConfigMaps) == 0 {
+	if matchedConfigMap == nil {
 		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	}
-	if len(matchedConfigMaps) > 1 {
-		return nil, fmt.Errorf("multiple ConfigMaps found for the same hub: %s", hubName)
-	}
-	return matchedConfigMaps[0], nil
+
+	return matchedConfigMap, nil
 }
 
 // getConfigMapDataByHubNameAndType returns config map data and whether the hub/type exists.
