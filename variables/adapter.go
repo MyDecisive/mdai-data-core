@@ -16,6 +16,17 @@ import (
 
 const (
 	variableKeyPrefix = "variable/"
+	// ValkeyWrongTypeOrNotFoundError is returned by custom Valkey module commands
+	// when the key is missing or has an incompatible type.
+	ValkeyWrongTypeOrNotFoundError = "WRONGTYPE_OR_NOTFOUND"
+	// PriorityListGetOrCreateCommand fetches or initializes a module-backed priority list.
+	PriorityListGetOrCreateCommand = "PRIORITYLIST.GETORCREATE"
+	// PriorityListGetCommand fetches a module-backed priority list.
+	PriorityListGetCommand = "PRIORITYLIST.GET"
+	// HashSetGetOrCreateCommand fetches or initializes a module-backed hash set value.
+	HashSetGetOrCreateCommand = "HASHSET.GETORCREATE"
+	// HashSetLookupCommand fetches a module-backed hash set value.
+	HashSetLookupCommand = "HASHSET.LOOKUP"
 )
 
 type ValkeyAdapter struct {
@@ -65,7 +76,7 @@ func (r *ValkeyAdapter) prefixedRefs(refs []string, hubName string) []string {
 func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variableKey string, hubName string, variableRefs []string) ([]string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	refs := r.prefixedRefs(variableRefs, hubName)
-	list, err := r.client.Do(ctx, r.client.B().Arbitrary("PRIORITYLIST.GETORCREATE").Keys(key).Args(refs...).Build()).AsStrSlice()
+	list, err := r.client.Do(ctx, r.client.B().Arbitrary(PriorityListGetOrCreateCommand).Keys(key).Args(refs...).Build()).AsStrSlice()
 	if err == nil {
 		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
 		return list, true, nil
@@ -80,13 +91,13 @@ func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variabl
 
 func (r *ValkeyAdapter) GetMetaPriorityList(ctx context.Context, variableKey string, hubName string) ([]string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
-	list, err := r.client.Do(ctx, r.client.B().Arbitrary("PRIORITYLIST.GET").Keys(key).Build()).AsStrSlice()
+	list, err := r.client.Do(ctx, r.client.B().Arbitrary(PriorityListGetCommand).Keys(key).Build()).AsStrSlice()
 	if err == nil {
 		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
 		return list, true, nil
 	}
 
-	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), "WRONGTYPE_OR_NOTFOUND") {
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), ValkeyWrongTypeOrNotFoundError) {
 		r.logger.Info("No value found for references", zap.String("key", key))
 		return nil, false, nil
 	}
@@ -98,7 +109,7 @@ func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey 
 	key := r.composeStorageKey(variableKey, hubName)
 	stringKey := r.composeStorageKey(variableStringKey, hubName)
 	setKey := r.composeStorageKey(variableSetKey, hubName)
-	value, err := r.client.Do(ctx, r.client.B().Arbitrary("HASHSET.GETORCREATE").Keys(key).Args(stringKey, setKey).Build()).ToString()
+	value, err := r.client.Do(ctx, r.client.B().Arbitrary(HashSetGetOrCreateCommand).Keys(key).Args(stringKey, setKey).Build()).ToString()
 	if err == nil {
 		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 		return value, true, nil
@@ -113,13 +124,13 @@ func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey 
 
 func (r *ValkeyAdapter) GetMetaHashSet(ctx context.Context, variableKey string, hubName string) (string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
-	value, err := r.client.Do(ctx, r.client.B().Arbitrary("HASHSET.LOOKUP").Keys(key).Build()).ToString()
+	value, err := r.client.Do(ctx, r.client.B().Arbitrary(HashSetLookupCommand).Keys(key).Build()).ToString()
 	if err == nil {
 		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 		return value, true, nil
 	}
 
-	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), "WRONGTYPE_OR_NOTFOUND") {
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), ValkeyWrongTypeOrNotFoundError) {
 		r.logger.Info("No value found for references", zap.String("key", key))
 		return "", false, nil
 	}

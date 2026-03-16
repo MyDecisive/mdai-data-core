@@ -173,7 +173,7 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GETORCREATE", key, r1, r2),
+			vmock.Match(PriorityListGetOrCreateCommand, key, r1, r2),
 		).
 		Return(vmock.Result(
 			vmock.ValkeyArray(
@@ -190,7 +190,7 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GETORCREATE", key, r1, r2),
+			vmock.Match(PriorityListGetOrCreateCommand, key, r1, r2),
 		).
 		Return(vmock.Result(vmock.ValkeyNil()))
 
@@ -211,7 +211,7 @@ func TestGetMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GET", key),
+			vmock.Match(PriorityListGetCommand, key),
 		).
 		Return(vmock.Result(
 			vmock.ValkeyArray(
@@ -228,9 +228,9 @@ func TestGetMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GET", key),
+			vmock.Match(PriorityListGetCommand, key),
 		).
-		Return(vmock.Result(vmock.ValkeyError("WRONGTYPE_OR_NOTFOUND")))
+		Return(vmock.Result(vmock.ValkeyError(ValkeyWrongTypeOrNotFoundError)))
 
 	list, found, err = adapter.GetMetaPriorityList(ctx, varKey, "hub")
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func TestGetOrCreateMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.GETORCREATE", key, strKey, setKey),
+			vmock.Match(HashSetGetOrCreateCommand, key, strKey, setKey),
 		).
 		Return(vmock.Result(vmock.ValkeyBlobString(wantVal)))
 
@@ -266,7 +266,7 @@ func TestGetOrCreateMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.GETORCREATE", key, strKey, setKey),
+			vmock.Match(HashSetGetOrCreateCommand, key, strKey, setKey),
 		).
 		Return(vmock.Result(vmock.ValkeyNil()))
 
@@ -287,7 +287,7 @@ func TestGetMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.LOOKUP", key),
+			vmock.Match(HashSetLookupCommand, key),
 		).
 		Return(vmock.Result(vmock.ValkeyBlobString(wantVal)))
 
@@ -299,9 +299,9 @@ func TestGetMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.LOOKUP", key),
+			vmock.Match(HashSetLookupCommand, key),
 		).
-		Return(vmock.Result(vmock.ValkeyError("WRONGTYPE_OR_NOTFOUND")))
+		Return(vmock.Result(vmock.ValkeyError(ValkeyWrongTypeOrNotFoundError)))
 
 	got, found, err = adapter.GetMetaHashSet(ctx, varKey, "hub")
 	require.NoError(t, err)
