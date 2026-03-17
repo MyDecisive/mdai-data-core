@@ -93,7 +93,7 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 		time.Hour*24,
 		informers.WithNamespace(namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
+			opts.LabelSelector = buildLabelSelector(configMapTypes)
 		}),
 	)
 
@@ -139,6 +139,10 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 	}
 
 	return c, nil
+}
+
+func buildLabelSelector(configMapTypes []string) string {
+	return fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
 }
 
 func getHubName(configMap *v1.ConfigMap) (string, error) {
