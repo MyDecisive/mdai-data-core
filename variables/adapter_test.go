@@ -53,6 +53,39 @@ func TestGetString(t *testing.T) {
 	assert.False(t, found)
 }
 
+func TestExists(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	key := "variable/hub/foo"
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyInt64(1)))
+	exists, err := adapter.Exists(ctx, "foo", "hub")
+
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyInt64(0)))
+	exists, err = adapter.Exists(ctx, "foo", "hub")
+
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyError("boom")))
+	exists, err = adapter.Exists(ctx, "foo", "hub")
+
+	require.Error(t, err)
+	assert.False(t, exists)
+	assert.ErrorContains(t, err, "check variable existence for "+key)
+	assert.ErrorContains(t, err, "boom")
+}
+
 func TestGetSetAsStringSlice(t *testing.T) {
 	adapter, client, ctx, ctrl := newAdapterWithMock(t)
 	defer ctrl.Finish()

@@ -73,6 +73,16 @@ func (r *ValkeyAdapter) prefixedRefs(refs []string, hubName string) []string {
 	return out
 }
 
+func (r *ValkeyAdapter) Exists(ctx context.Context, variableKey string, hubName string) (bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	count, err := r.client.Do(ctx, r.client.B().Exists().Key(key).Build()).AsInt64()
+	if err != nil {
+		return false, fmt.Errorf("check variable existence for %s: %w", key, err)
+	}
+
+	return count > 0, nil
+}
+
 func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variableKey string, hubName string, variableRefs []string) ([]string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	refs := r.prefixedRefs(variableRefs, hubName)
