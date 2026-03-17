@@ -1,4 +1,4 @@
-[![Chores](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml/badge.svg)](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml) [![codecov](https://codecov.io/gh/DecisiveAI/mdai-data-core/graph/badge.svg?token=UPHRBSXOON)](https://codecov.io/gh/DecisiveAI/mdai-data-core)
+[![Chores](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml/badge.svg)](https://github.com/mydecisive/mdai-data-core/actions/workflows/chores.yml) [![codecov](https://codecov.io/gh/mydecisive/mdai-data-core/graph/badge.svg?token=UPHRBSXOON)](https://codecov.io/gh/mydecisive/mdai-data-core)
 
 # mdai-data-core
 
