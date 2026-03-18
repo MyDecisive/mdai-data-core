@@ -16,6 +16,17 @@ import (
 
 const (
 	variableKeyPrefix = "variable/"
+	// ValkeyWrongTypeOrNotFoundError is returned by custom Valkey module commands
+	// when the key is missing or has an incompatible type.
+	ValkeyWrongTypeOrNotFoundError = "WRONGTYPE_OR_NOTFOUND"
+	// PriorityListGetOrCreateCommand fetches or initializes a module-backed priority list.
+	PriorityListGetOrCreateCommand = "PRIORITYLIST.GETORCREATE"
+	// PriorityListGetCommand fetches a module-backed priority list.
+	PriorityListGetCommand = "PRIORITYLIST.GET"
+	// HashSetGetOrCreateCommand fetches or initializes a module-backed hash set value.
+	HashSetGetOrCreateCommand = "HASHSET.GETORCREATE"
+	// HashSetLookupCommand fetches a module-backed hash set value.
+	HashSetLookupCommand = "HASHSET.LOOKUP"
 )
 
 type ValkeyAdapter struct {
@@ -62,12 +73,22 @@ func (r *ValkeyAdapter) prefixedRefs(refs []string, hubName string) []string {
 	return out
 }
 
+func (r *ValkeyAdapter) Exists(ctx context.Context, variableKey string, hubName string) (bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	count, err := r.client.Do(ctx, r.client.B().Exists().Key(key).Build()).AsInt64()
+	if err != nil {
+		return false, fmt.Errorf("check variable existence for %s: %w", key, err)
+	}
+
+	return count > 0, nil
+}
+
 func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variableKey string, hubName string, variableRefs []string) ([]string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	refs := r.prefixedRefs(variableRefs, hubName)
-	list, err := r.client.Do(ctx, r.client.B().Arbitrary("PRIORITYLIST.GETORCREATE").Keys(key).Args(refs...).Build()).AsStrSlice()
+	list, err := r.client.Do(ctx, r.client.B().Arbitrary(PriorityListGetOrCreateCommand).Keys(key).Args(refs...).Build()).AsStrSlice()
 	if err == nil {
-		r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, list))
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
 		return list, true, nil
 	}
 
@@ -78,13 +99,29 @@ func (r *ValkeyAdapter) GetOrCreateMetaPriorityList(ctx context.Context, variabl
 	return nil, false, err
 }
 
+func (r *ValkeyAdapter) GetMetaPriorityList(ctx context.Context, variableKey string, hubName string) ([]string, bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	list, err := r.client.Do(ctx, r.client.B().Arbitrary(PriorityListGetCommand).Keys(key).Build()).AsStrSlice()
+	if err == nil {
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", list))
+		return list, true, nil
+	}
+
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), ValkeyWrongTypeOrNotFoundError) {
+		r.logger.Info("No value found for references", zap.String("key", key))
+		return nil, false, nil
+	}
+
+	return nil, false, err
+}
+
 func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey string, hubName string, variableStringKey string, variableSetKey string) (string, bool, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	stringKey := r.composeStorageKey(variableStringKey, hubName)
 	setKey := r.composeStorageKey(variableSetKey, hubName)
-	value, err := r.client.Do(ctx, r.client.B().Arbitrary("HASHSET.GETORCREATE").Keys(key).Args(stringKey, setKey).Build()).ToString()
+	value, err := r.client.Do(ctx, r.client.B().Arbitrary(HashSetGetOrCreateCommand).Keys(key).Args(stringKey, setKey).Build()).ToString()
 	if err == nil {
-		r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, value))
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 		return value, true, nil
 	}
 
@@ -92,6 +129,22 @@ func (r *ValkeyAdapter) GetOrCreateMetaHashSet(ctx context.Context, variableKey 
 		r.logger.Info("No value found for references", zap.String("key", key))
 		return "", false, nil
 	}
+	return "", false, err
+}
+
+func (r *ValkeyAdapter) GetMetaHashSet(ctx context.Context, variableKey string, hubName string) (string, bool, error) {
+	key := r.composeStorageKey(variableKey, hubName)
+	value, err := r.client.Do(ctx, r.client.B().Arbitrary(HashSetLookupCommand).Keys(key).Build()).ToString()
+	if err == nil {
+		r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
+		return value, true, nil
+	}
+
+	if valkey.IsValkeyNil(err) || strings.Contains(err.Error(), ValkeyWrongTypeOrNotFoundError) {
+		r.logger.Info("No value found for references", zap.String("key", key))
+		return "", false, nil
+	}
+
 	return "", false, err
 }
 
@@ -103,7 +156,7 @@ func (r *ValkeyAdapter) GetSetAsStringSlice(ctx context.Context, variableKey str
 		return nil, err
 	}
 
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, valueAsSlice))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.Strings("values", valueAsSlice))
 	return valueAsSlice, nil
 }
 
@@ -120,7 +173,7 @@ func (r *ValkeyAdapter) GetString(ctx context.Context, variableKey string, hubNa
 		r.logger.Error("failed to get String value from storage", zap.Error(err), zap.String("key", key))
 		return "", false, err
 	}
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, value))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("value", value))
 	return value, true, nil
 }
 
@@ -149,7 +202,7 @@ func (r *ValkeyAdapter) GetMapAsString(ctx context.Context, variableKey string, 
 		return "", err
 	}
 
-	r.logger.Info(fmt.Sprintf("Data received for %s: %s", key, string(yamlData)))
+	r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("yaml", string(yamlData)))
 	return string(yamlData), nil
 }
 
@@ -227,7 +280,7 @@ func (r *ValkeyAdapter) DeleteKeysWithPrefixUsingScan(ctx context.Context, keep 
 		for _, k := range scanResult.Elements {
 			res, found := strings.CutPrefix(k, prefix)
 			if !found {
-				return fmt.Errorf("failed to parse prefix for key %s: %w", k, err)
+				return fmt.Errorf("key %s does not have expected prefix %s", k, prefix)
 			}
 			if _, exists := keep[res]; exists {
 				continue

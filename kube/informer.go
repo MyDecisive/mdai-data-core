@@ -22,29 +22,40 @@ import (
 )
 
 const (
-	ByHub                   = "IndexByHub"
+	ByHubAndType            = "IndexByHubAndType"
+	ByType                  = "IndexByType"
 	EnvConfigMapType        = "hub-variables"
-	ManualEnvConfigMapType  = "hub-manual-variables"
 	AutomationConfigMapType = "hub-automation"
+	VariablesSchemaMapType  = "hub-variables-schema"
 	LabelMdaiHubName        = "mydecisive.ai/hub-name"
 	ConfigMapTypeLabel      = "mydecisive.ai/configmap-type"
+	// Deprecated: migrate to VariablesSchemaMapType.
+	ManualEnvConfigMapType = "hub-manual-variables"
 )
 
 var (
-	errConfigMapCache    = fmt.Errorf("failed to populate ConfigMap cache")
-	errUnsupportedCmType = fmt.Errorf("unsupported ConfigMap type")
-	errNoHubNamLabel     = fmt.Errorf("ConfigMap does not have hub name label")
+	errConfigMapCache       = fmt.Errorf("failed to populate ConfigMap cache")
+	errUnsupportedCmType    = fmt.Errorf("unsupported ConfigMap type")
+	errNoHubNameLabel       = fmt.Errorf("ConfigMap does not have hub name label")
+	errNoConfigMapTypeLabel = fmt.Errorf("ConfigMap does not have configmap type label")
 
-	supportedConfigMapTypes = []string{EnvConfigMapType, ManualEnvConfigMapType, AutomationConfigMapType}
+	supportedConfigMapTypes = []string{EnvConfigMapType, ManualEnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType}
 )
 
 type ConfigMapStore interface {
 	Run() error
 	Stop()
 
+	// Deprecated: use a type-specific GetAllHubs*ConfigMapData helper for deterministic lookups.
 	GetAllHubsToDataMap() (map[string]map[string]string, error)
-	GetHubData(hubName string) ([]map[string]string, error)
+	// Deprecated: use GetEnvConfigMapDataByHubName, GetAutomationConfigMapDataByHubName, or GetVariablesSchemaConfigMapDataByHubName
 	GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error)
+	GetEnvConfigMapDataByHubName(hubName string) (map[string]string, bool, error)
+	GetAutomationConfigMapDataByHubName(hubName string) (map[string]string, bool, error)
+	GetVariablesSchemaConfigMapDataByHubName(hubName string) (map[string]string, bool, error)
+	GetAllHubsEnvConfigMapData() (map[string]map[string]string, error)
+	GetAllHubsAutomationConfigMapData() (map[string]map[string]string, error)
+	GetAllHubsVariablesSchemaConfigMapData() (map[string]map[string]string, error)
 }
 
 type ConfigMapController struct {
@@ -82,20 +93,38 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 		time.Hour*24,
 		informers.WithNamespace(namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
+			opts.LabelSelector = buildLabelSelector(configMapTypes)
 		}),
 	)
 
 	cmInformer := informerFactory.Core().V1().ConfigMaps()
 
 	if err := cmInformer.Informer().AddIndexers(map[string]cache.IndexFunc{
-		ByHub: func(obj interface{}) ([]string, error) {
-			hubName, err := getHubName(obj.(*v1.ConfigMap))
+		ByHubAndType: func(obj interface{}) ([]string, error) {
+			cm := obj.(*v1.ConfigMap)
+			hubName, err := getHubName(cm)
 			if err != nil {
-				logger.Error("failed to get hub name for ConfigMap", zap.String("ConfigMap name", obj.(*v1.ConfigMap).Name))
+				logger.Error("failed to get hub name for ConfigMap", zap.String("ConfigMap name", cm.Name))
 				return nil, err
 			}
-			return []string{hubName}, nil
+
+			configMapType, err := getConfigMapType(cm)
+			if err != nil {
+				logger.Error("failed to get ConfigMap type", zap.String("ConfigMap name", cm.Name))
+				return nil, err
+			}
+
+			return []string{getHubAndTypeKey(hubName, configMapType)}, nil
+		},
+		ByType: func(obj interface{}) ([]string, error) {
+			cm := obj.(*v1.ConfigMap)
+			configMapType, err := getConfigMapType(cm)
+			if err != nil {
+				logger.Error("failed to get ConfigMap type", zap.String("ConfigMap name", cm.Name))
+				return nil, err
+			}
+
+			return []string{configMapType}, nil
 		},
 	}); err != nil {
 		logger.Error("failed to add index", zap.Error(err))
@@ -112,11 +141,27 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 	return c, nil
 }
 
+func buildLabelSelector(configMapTypes []string) string {
+	return fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
+}
+
 func getHubName(configMap *v1.ConfigMap) (string, error) {
 	if hubName, ok := configMap.Labels[LabelMdaiHubName]; ok {
 		return hubName, nil
 	}
-	return "", errNoHubNamLabel
+	return "", errNoHubNameLabel
+}
+
+func getConfigMapType(configMap *v1.ConfigMap) (string, error) {
+	if configMapType, ok := configMap.Labels[ConfigMapTypeLabel]; ok {
+		return configMapType, nil
+	}
+	return "", errNoConfigMapTypeLabel
+}
+
+func getHubAndTypeKey(hubName string, configMapType string) string {
+	// NUL cannot appear in Kubernetes label values
+	return hubName + "\x00" + configMapType
 }
 
 func NewK8sClient(logger *zap.Logger) (kubernetes.Interface, error) {
@@ -157,65 +202,139 @@ func getKubeConfig(logger *zap.Logger, homeDirGetterFunc HomeDirGetterFunc) (*re
 	return config, nil
 }
 
+// Deprecated: use a type-specific GetAllHubs*ConfigMapData helper for deterministic lookups.
+// This method flattens multiple watched ConfigMap types into one value per hub and can be ambiguous.
+// Still used in gateway
 func (cmc *ConfigMapController) GetAllHubsToDataMap() (map[string]map[string]string, error) {
 	hubMap := make(map[string]map[string]string)
 
-	indexer := cmc.CmInformer.Informer().GetIndexer()
-	hubNames := indexer.ListIndexFuncValues(ByHub)
-	for _, hubName := range hubNames {
-		objs, err := indexer.ByIndex(ByHub, hubName)
-		if err != nil {
-			cmc.Logger.Error("Failed to get hub ConfigMaps", zap.String("Hub name", hubName), zap.Error(err))
+	for _, obj := range cmc.CmInformer.Informer().GetIndexer().List() {
+		cm, ok := obj.(*v1.ConfigMap)
+		if !ok {
+			cmc.Logger.Error("Failed to deserialize data to ConfigMap")
 			continue
 		}
-		for _, obj := range objs {
-			cm, ok := obj.(*v1.ConfigMap)
-			if !ok {
-				cmc.Logger.Error("Failed to deserialize data to ConfigMap", zap.String("Hub name", hubName), zap.Error(err))
-				continue
-			}
-			hubMap[hubName] = cm.Data
+
+		hubName, err := getHubName(cm)
+		if err != nil {
+			cmc.Logger.Error("Failed to get hub name for ConfigMap", zap.String("ConfigMap name", cm.Name), zap.Error(err))
+			continue
 		}
+		hubMap[hubName] = cm.Data
 	}
 	return hubMap, nil
 }
 
-func (cmc *ConfigMapController) GetHubData(hubName string) ([]map[string]string, error) {
-	indexer := cmc.CmInformer.Informer().GetIndexer()
-	objs, err := indexer.ByIndex(ByHub, hubName)
+// getAllHubsToDataMapByType returns a hub->data map for a single ConfigMap type.
+func (cmc *ConfigMapController) getAllHubsToDataMapByType(configMapType string) (map[string]map[string]string, error) {
+	objs, err := cmc.CmInformer.Informer().GetIndexer().ByIndex(ByType, configMapType)
 	if err != nil {
-		return nil, fmt.Errorf("getting hub by index: %w", err)
+		return nil, fmt.Errorf("getting type by index: %w", err)
 	}
-	result := make([]map[string]string, 0, len(objs))
+
+	hubMap := make(map[string]map[string]string, len(objs))
 	for _, obj := range objs {
 		cm, ok := obj.(*v1.ConfigMap)
 		if !ok {
-			cmc.Logger.Error("Failed to deserialize data to ConfigMap", zap.Error(err))
-			continue
+			return nil, fmt.Errorf("failed to deserialize data to ConfigMap, type: %s", configMapType)
 		}
-		result = append(result, cm.Data)
+
+		hubName, err := getHubName(cm)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := hubMap[hubName]; exists {
+			return nil, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hubName, configMapType)
+		}
+
+		hubMap[hubName] = cm.Data
 	}
-	return result, nil
+
+	return hubMap, nil
 }
 
-// GetConfigMapByHubName returns the first ConfigMap found for the given hub name.
-// This function assumes that the ConfigMaps of certain type filtered by label are unique per hub.
+// GetAllHubsEnvConfigMapData returns variables config map data for all hubs.
+func (cmc *ConfigMapController) GetAllHubsEnvConfigMapData() (map[string]map[string]string, error) {
+	return cmc.getAllHubsToDataMapByType(EnvConfigMapType)
+}
+
+// GetAllHubsAutomationConfigMapData returns automation config map data for all hubs.
+func (cmc *ConfigMapController) GetAllHubsAutomationConfigMapData() (map[string]map[string]string, error) {
+	return cmc.getAllHubsToDataMapByType(AutomationConfigMapType)
+}
+
+// GetAllHubsVariablesSchemaConfigMapData returns variables schema config map data for all hubs.
+func (cmc *ConfigMapController) GetAllHubsVariablesSchemaConfigMapData() (map[string]map[string]string, error) {
+	return cmc.getAllHubsToDataMapByType(VariablesSchemaMapType)
+}
+
+// Deprecated: use a type-specific Get*ConfigMapDataByHubName helper when the informer may watch multiple ConfigMap types per hub.
+// GetConfigMapByHubName returns the only ConfigMap found for the given hub name.
+// Still used in event hub
 func (cmc *ConfigMapController) GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error) {
-	indexer := cmc.CmInformer.Informer().GetIndexer()
-	objs, err := indexer.ByIndex(ByHub, hubName)
-	if err != nil {
-		return nil, fmt.Errorf("getting hub by index: %w", err)
+	var matchedConfigMap *v1.ConfigMap
+	for _, obj := range cmc.CmInformer.Informer().GetIndexer().List() {
+		cm, ok := obj.(*v1.ConfigMap)
+		if !ok {
+			cmc.Logger.Error("Failed to deserialize data to ConfigMap")
+			continue
+		}
+
+		cmHubName, err := getHubName(cm)
+		if err != nil {
+			cmc.Logger.Error("Failed to get hub name for ConfigMap", zap.String("ConfigMap name", cm.Name), zap.Error(err))
+			continue
+		}
+		if cmHubName != hubName {
+			continue
+		}
+
+		if matchedConfigMap != nil {
+			return nil, fmt.Errorf("multiple ConfigMaps found for the same hub: %s", hubName)
+		}
+
+		matchedConfigMap = cm
 	}
-	if len(objs) == 0 {
+
+	if matchedConfigMap == nil {
 		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	}
+
+	return matchedConfigMap, nil
+}
+
+// getConfigMapDataByHubNameAndType returns config map data and whether the hub/type exists.
+func (cmc *ConfigMapController) getConfigMapDataByHubNameAndType(hubName string, configMapType string) (map[string]string, bool, error) {
+	indexer := cmc.CmInformer.Informer().GetIndexer()
+	objs, err := indexer.ByIndex(ByHubAndType, getHubAndTypeKey(hubName, configMapType))
+	if err != nil {
+		return nil, false, fmt.Errorf("getting hub and type by index: %w", err)
+	}
+	if len(objs) == 0 {
+		return nil, false, nil
+	}
 	if len(objs) > 1 {
-		return nil, fmt.Errorf("multiple ConfigMaps found for the same hub: %s", hubName)
+		return nil, true, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hubName, configMapType)
 	}
 	cm, ok := objs[0].(*v1.ConfigMap)
 	if !ok {
-		return nil, fmt.Errorf("failed to deserialize data to ConfigMap, hub name: %s", hubName)
+		return nil, false, fmt.Errorf("failed to deserialize data to ConfigMap, hub name: %s, type: %s", hubName, configMapType)
 	}
 
-	return cm, nil
+	return cm.Data, true, nil
+}
+
+// GetEnvConfigMapDataByHubName returns variables config map data for the given hub.
+func (cmc *ConfigMapController) GetEnvConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return cmc.getConfigMapDataByHubNameAndType(hubName, EnvConfigMapType)
+}
+
+// GetAutomationConfigMapDataByHubName returns automation config map data for the given hub.
+func (cmc *ConfigMapController) GetAutomationConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return cmc.getConfigMapDataByHubNameAndType(hubName, AutomationConfigMapType)
+}
+
+// GetVariablesSchemaConfigMapDataByHubName returns variables schema config map data for the given hub.
+func (cmc *ConfigMapController) GetVariablesSchemaConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
+	return cmc.getConfigMapDataByHubNameAndType(hubName, VariablesSchemaMapType)
 }

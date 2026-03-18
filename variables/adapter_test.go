@@ -53,6 +53,39 @@ func TestGetString(t *testing.T) {
 	assert.False(t, found)
 }
 
+func TestExists(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	key := "variable/hub/foo"
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyInt64(1)))
+	exists, err := adapter.Exists(ctx, "foo", "hub")
+
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyInt64(0)))
+	exists, err = adapter.Exists(ctx, "foo", "hub")
+
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	client.EXPECT().
+		Do(ctx, vmock.Match("EXISTS", key)).
+		Return(vmock.Result(vmock.ValkeyError("boom")))
+	exists, err = adapter.Exists(ctx, "foo", "hub")
+
+	require.Error(t, err)
+	assert.False(t, exists)
+	assert.ErrorContains(t, err, "check variable existence for "+key)
+	assert.ErrorContains(t, err, "boom")
+}
+
 func TestGetSetAsStringSlice(t *testing.T) {
 	adapter, client, ctx, ctrl := newAdapterWithMock(t)
 	defer ctrl.Finish()
@@ -173,7 +206,7 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GETORCREATE", key, r1, r2),
+			vmock.Match(PriorityListGetOrCreateCommand, key, r1, r2),
 		).
 		Return(vmock.Result(
 			vmock.ValkeyArray(
@@ -190,11 +223,49 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("PRIORITYLIST.GETORCREATE", key, r1, r2),
+			vmock.Match(PriorityListGetOrCreateCommand, key, r1, r2),
 		).
 		Return(vmock.Result(vmock.ValkeyNil()))
 
 	list, found, err = adapter.GetOrCreateMetaPriorityList(ctx, varKey, "hub", refs)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Nil(t, list)
+}
+
+func TestGetMetaPriorityList(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	varKey := "parent"
+	key := "variable/hub/" + varKey
+	r1, r2 := "variable/hub/ref1", "variable/hub/ref2"
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match(PriorityListGetCommand, key),
+		).
+		Return(vmock.Result(
+			vmock.ValkeyArray(
+				vmock.ValkeyBlobString(r1),
+				vmock.ValkeyBlobString(r2),
+			),
+		))
+
+	list, found, err := adapter.GetMetaPriorityList(ctx, varKey, "hub")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []string{r1, r2}, list)
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match(PriorityListGetCommand, key),
+		).
+		Return(vmock.Result(vmock.ValkeyError(ValkeyWrongTypeOrNotFoundError)))
+
+	list, found, err = adapter.GetMetaPriorityList(ctx, varKey, "hub")
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Nil(t, list)
@@ -216,7 +287,7 @@ func TestGetOrCreateMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.GETORCREATE", key, strKey, setKey),
+			vmock.Match(HashSetGetOrCreateCommand, key, strKey, setKey),
 		).
 		Return(vmock.Result(vmock.ValkeyBlobString(wantVal)))
 
@@ -228,11 +299,44 @@ func TestGetOrCreateMetaHashSet(t *testing.T) {
 	client.
 		EXPECT().
 		Do(ctx,
-			vmock.Match("HASHSET.GETORCREATE", key, strKey, setKey),
+			vmock.Match(HashSetGetOrCreateCommand, key, strKey, setKey),
 		).
 		Return(vmock.Result(vmock.ValkeyNil()))
 
 	got, found, err = adapter.GetOrCreateMetaHashSet(ctx, varKey, "hub", strKeyInput, setKeyInput)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Empty(t, got)
+}
+
+func TestGetMetaHashSet(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	varKey := "color"
+	key := "variable/hub/" + varKey
+	wantVal := "blue"
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match(HashSetLookupCommand, key),
+		).
+		Return(vmock.Result(vmock.ValkeyBlobString(wantVal)))
+
+	got, found, err := adapter.GetMetaHashSet(ctx, varKey, "hub")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, wantVal, got)
+
+	client.
+		EXPECT().
+		Do(ctx,
+			vmock.Match(HashSetLookupCommand, key),
+		).
+		Return(vmock.Result(vmock.ValkeyError(ValkeyWrongTypeOrNotFoundError)))
+
+	got, found, err = adapter.GetMetaHashSet(ctx, varKey, "hub")
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Empty(t, got)
