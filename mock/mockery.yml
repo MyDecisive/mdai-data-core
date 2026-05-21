@@ -10,3 +10,6 @@ packages:
   github.com/mydecisive/mdai-data-core/opamp:
     interfaces:
       ConnectionManager:
+  github.com/mydecisive/mdai-data-core/kube:
+    interfaces:
+      SecretStore:

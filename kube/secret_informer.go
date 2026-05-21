@@ -77,6 +77,8 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 	)
 
 	secretInformer := informerFactory.Core().V1().Secrets()
+	// register the informer
+	secretInformer.Informer()
 	sc := &SecretController{
 		namespace:       namespace,
 		InformerFactory: informerFactory,
