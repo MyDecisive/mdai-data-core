@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	SecretTypeLabel              = "mydecisive.ai/configmap-type"
+	SecretTypeLabel              = "mydecisive.ai/secret-type"
 	OctantIntegrationDatadogType = "octant-integration-datadog"
 	OctantIntegrationArgoType    = "octant-integration-argo"
 )
