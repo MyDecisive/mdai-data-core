@@ -783,7 +783,7 @@ func TestBuildLabelSelector(t *testing.T) {
 	t.Run("multiple types", func(t *testing.T) {
 		t.Parallel()
 
-		selector, err := labels.Parse(buildLabelSelector([]string{EnvConfigMapType, AutomationConfigMapType}))
+		selector, err := labels.Parse(buildConfigmapLabelSelector([]string{EnvConfigMapType, AutomationConfigMapType}))
 		require.NoError(t, err)
 
 		assert.True(t, selector.Matches(labels.Set{ConfigMapTypeLabel: EnvConfigMapType}))
@@ -795,7 +795,7 @@ func TestBuildLabelSelector(t *testing.T) {
 	t.Run("single type", func(t *testing.T) {
 		t.Parallel()
 
-		selector, err := labels.Parse(buildLabelSelector([]string{EnvConfigMapType}))
+		selector, err := labels.Parse(buildConfigmapLabelSelector([]string{EnvConfigMapType}))
 		require.NoError(t, err)
 
 		assert.True(t, selector.Matches(labels.Set{ConfigMapTypeLabel: EnvConfigMapType}))
