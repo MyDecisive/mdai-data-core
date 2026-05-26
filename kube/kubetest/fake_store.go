@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ kube.ConfigMapStore = (*FakeConfigMapStore)(nil)
+var _ kube.HubConfigMapStore = (*FakeConfigMapStore)(nil)
 
 // FakeConfigMapStore is a threadsafe in-memory implementation of kube.ConfigMapStore.
 // It avoids client-go informers and lets tests seed & assert data deterministically.
@@ -17,7 +17,8 @@ type FakeConfigMapStore struct {
 	mu sync.RWMutex
 
 	// hub -> configmaps
-	byHub map[string][]*v1.ConfigMap
+	byHub  map[string][]*v1.ConfigMap
+	allCMs map[string]*v1.ConfigMap
 
 	// Optional error injection points
 	RunErr                       error
@@ -25,6 +26,7 @@ type FakeConfigMapStore struct {
 	GetAllHubsToDataMapByTypeErr error
 	GetConfigMapByHubNameErr     error
 	GetConfigMapByHubAndTypeErr  error
+	GetConfigMapByNameErr        error
 
 	// Lifecycle flags
 	running bool
@@ -34,7 +36,8 @@ type FakeConfigMapStore struct {
 // NewFakeConfigMapStore creates an empty fake store.
 func NewFakeConfigMapStore() *FakeConfigMapStore {
 	return &FakeConfigMapStore{
-		byHub: make(map[string][]*v1.ConfigMap),
+		byHub:  make(map[string][]*v1.ConfigMap),
+		allCMs: make(map[string]*v1.ConfigMap),
 	}
 }
 
@@ -54,6 +57,7 @@ func (f *FakeConfigMapStore) SeedConfigMap(hubName, cmName, cmType string, data 
 		Data: data,
 	}
 	f.byHub[hubName] = append(f.byHub[hubName], cm)
+	f.allCMs[cmName] = cm
 	return f
 }
 
@@ -69,6 +73,7 @@ func (f *FakeConfigMapStore) Reset() {
 	f.GetAllHubsToDataMapByTypeErr = nil
 	f.GetConfigMapByHubNameErr = nil
 	f.GetConfigMapByHubAndTypeErr = nil
+	f.GetConfigMapByNameErr = nil
 }
 
 func (f *FakeConfigMapStore) Run() error {
@@ -138,6 +143,16 @@ func (f *FakeConfigMapStore) GetAllHubsAutomationConfigMapData() (map[string]map
 
 func (f *FakeConfigMapStore) GetAllHubsVariablesSchemaConfigMapData() (map[string]map[string]string, error) {
 	return f.getAllHubsToDataMapByType(kube.VariablesSchemaMapType)
+}
+
+func (f *FakeConfigMapStore) GetConfigmapByNameAndNamespace(name, _ string) (*v1.ConfigMap, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.GetConfigMapByHubNameErr != nil {
+		return nil, f.GetConfigMapByHubNameErr
+	}
+
+	return f.allCMs[name], nil
 }
 
 func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error) {

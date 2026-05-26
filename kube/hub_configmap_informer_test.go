@@ -21,7 +21,7 @@ import (
 
 const (
 	eventuallyTimeout = time.Second
-	eventuallyTick    = 100 * time.Millisecond
+	eventuallyTick    = 50 * time.Millisecond
 )
 
 func writeKubeconfig(t *testing.T, content string) string {
@@ -64,7 +64,7 @@ func newTestConfigMap(name, namespace, hubName, configMapType string, data map[s
 	}
 }
 
-func newStartedController(t *testing.T, watchedTypes []string, namespace string, configMaps ...*corev1.ConfigMap) *ConfigMapController {
+func newStartedHubController(t *testing.T, watchedTypes []string, namespace string, configMaps ...*corev1.ConfigMap) *HubConfigMapController {
 	t.Helper()
 
 	objects := make([]runtime.Object, 0, len(configMaps))
@@ -72,7 +72,7 @@ func newStartedController(t *testing.T, watchedTypes []string, namespace string,
 		objects = append(objects, configMap)
 	}
 
-	controller, err := NewConfigMapController(watchedTypes, namespace, fake.NewClientset(objects...), zap.NewNop())
+	controller, err := NewHubConfigMapController(watchedTypes, namespace, fake.NewClientset(objects...), zap.NewNop())
 	require.NoError(t, err)
 	require.NoError(t, controller.Run())
 	t.Cleanup(controller.Stop)
@@ -134,7 +134,7 @@ func requireEventually(t *testing.T, check func(*assert.CollectT)) {
 	require.EventuallyWithT(t, check, eventuallyTimeout, eventuallyTick)
 }
 
-func TestConfigMapController_NamespaceFiltering(t *testing.T) {
+func TestHubConfigMapController_NamespaceFiltering(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -208,7 +208,7 @@ func TestConfigMapController_NamespaceFiltering(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 
 			for hubName, wantConfigMap := range tt.wantHubs {
 				requireEventually(t, func(c *assert.CollectT) {
@@ -239,10 +239,10 @@ func TestConfigMapController_NamespaceFiltering(t *testing.T) {
 	}
 }
 
-func TestNewConfigMapController_NonExistentCmType(t *testing.T) {
+func TestNewHubConfigMapController_NonExistentCmType(t *testing.T) {
 	t.Parallel()
 
-	controller, err := NewConfigMapController(
+	controller, err := NewHubConfigMapController(
 		[]string{"hub-nonexistent-cm-type"},
 		"second",
 		fake.NewClientset(),
@@ -366,7 +366,7 @@ func TestGetConfigMapByHubName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			if len(tt.configMaps) == 0 {
 				configMap, err := controller.GetConfigMapByHubName(tt.hubName)
 				require.Nil(t, configMap)
@@ -403,7 +403,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 		namespace       string
 		configMaps      []*corev1.ConfigMap
 		hubName         string
-		getData         func(*ConfigMapController, string) (map[string]string, bool, error)
+		getData         func(*HubConfigMapController, string) (map[string]string, bool, error)
 		wantData        map[string]string
 		wantFound       bool
 		wantErrContains string
@@ -425,7 +425,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
 			hubName:      "shared-hub",
-			getData:      (*ConfigMapController).GetEnvConfigMapDataByHubName,
+			getData:      (*HubConfigMapController).GetEnvConfigMapDataByHubName,
 			wantData:     fixtures.envConfigMap.Data,
 			wantFound:    true,
 		},
@@ -435,7 +435,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
 			hubName:      "shared-hub",
-			getData:      (*ConfigMapController).GetAutomationConfigMapDataByHubName,
+			getData:      (*HubConfigMapController).GetAutomationConfigMapDataByHubName,
 			wantData:     fixtures.automationConfigMap.Data,
 			wantFound:    true,
 		},
@@ -445,7 +445,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
 			hubName:      "shared-hub",
-			getData:      (*ConfigMapController).GetVariablesSchemaConfigMapDataByHubName,
+			getData:      (*HubConfigMapController).GetVariablesSchemaConfigMapDataByHubName,
 			wantData:     fixtures.schemaConfigMap.Data,
 			wantFound:    true,
 		},
@@ -455,7 +455,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{nilDataEnvConfigMap},
 			hubName:      "nil-data-hub",
-			getData:      (*ConfigMapController).GetEnvConfigMapDataByHubName,
+			getData:      (*HubConfigMapController).GetEnvConfigMapDataByHubName,
 			wantData:     nil,
 			wantFound:    true,
 		},
@@ -465,7 +465,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
 			hubName:      "missing-hub",
-			getData:      (*ConfigMapController).GetEnvConfigMapDataByHubName,
+			getData:      (*HubConfigMapController).GetEnvConfigMapDataByHubName,
 			wantFound:    false,
 		},
 		{
@@ -474,7 +474,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 			namespace:       "first",
 			configMaps:      []*corev1.ConfigMap{fixtures.duplicateEnv1, fixtures.duplicateEnv2},
 			hubName:         "shared-hub",
-			getData:         (*ConfigMapController).GetEnvConfigMapDataByHubName,
+			getData:         (*HubConfigMapController).GetEnvConfigMapDataByHubName,
 			wantFound:       true,
 			wantErrContains: "multiple ConfigMaps found for the same hub and type: shared-hub, hub-variables",
 		},
@@ -484,7 +484,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			requireEventually(t, func(c *assert.CollectT) {
 				data, found, err := tt.getData(controller, tt.hubName)
 				assert.Equal(c, tt.wantFound, found)
@@ -514,7 +514,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 		watchedTypes    []string
 		namespace       string
 		configMaps      []*corev1.ConfigMap
-		getData         func(*ConfigMapController) (map[string]map[string]string, error)
+		getData         func(*HubConfigMapController) (map[string]map[string]string, error)
 		wantMap         map[string]map[string]string
 		wantErrContains string
 	}
@@ -534,7 +534,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 			watchedTypes: []string{EnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType},
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
-			getData:      (*ConfigMapController).GetAllHubsEnvConfigMapData,
+			getData:      (*HubConfigMapController).GetAllHubsEnvConfigMapData,
 			wantMap: map[string]map[string]string{
 				"mdaihub-first": fixtures.envConfigMap.Data,
 			},
@@ -544,7 +544,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 			watchedTypes: []string{EnvConfigMapType},
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{nilDataEnvConfigMap},
-			getData:      (*ConfigMapController).GetAllHubsEnvConfigMapData,
+			getData:      (*HubConfigMapController).GetAllHubsEnvConfigMapData,
 			wantMap: map[string]map[string]string{
 				"nil-data-hub": nil,
 			},
@@ -554,7 +554,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 			watchedTypes: []string{EnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType},
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
-			getData:      (*ConfigMapController).GetAllHubsAutomationConfigMapData,
+			getData:      (*HubConfigMapController).GetAllHubsAutomationConfigMapData,
 			wantMap: map[string]map[string]string{
 				"mdaihub-second": fixtures.automationConfigMap.Data,
 			},
@@ -564,7 +564,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 			watchedTypes: []string{EnvConfigMapType, AutomationConfigMapType, VariablesSchemaMapType},
 			namespace:    "first",
 			configMaps:   []*corev1.ConfigMap{fixtures.envConfigMap, fixtures.automationConfigMap, fixtures.schemaConfigMap},
-			getData:      (*ConfigMapController).GetAllHubsVariablesSchemaConfigMapData,
+			getData:      (*HubConfigMapController).GetAllHubsVariablesSchemaConfigMapData,
 			wantMap: map[string]map[string]string{
 				"mdaihub-third": fixtures.schemaConfigMap.Data,
 			},
@@ -574,7 +574,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 			watchedTypes:    []string{EnvConfigMapType},
 			namespace:       "first",
 			configMaps:      []*corev1.ConfigMap{fixtures.duplicateEnv1, fixtures.duplicateEnv2},
-			getData:         (*ConfigMapController).GetAllHubsEnvConfigMapData,
+			getData:         (*HubConfigMapController).GetAllHubsEnvConfigMapData,
 			wantErrContains: "multiple ConfigMaps found for the same hub and type: shared-hub, hub-variables",
 		},
 	}
@@ -583,7 +583,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			requireEventually(t, func(c *assert.CollectT) {
 				hubData, err := tt.getData(controller)
 				if tt.wantErrContains != "" {
@@ -783,7 +783,10 @@ func TestBuildLabelSelector(t *testing.T) {
 	t.Run("multiple types", func(t *testing.T) {
 		t.Parallel()
 
-		selector, err := labels.Parse(buildLabelSelector([]string{EnvConfigMapType, AutomationConfigMapType}))
+		labelSelector, err := buildConfigmapLabelSelector([]string{EnvConfigMapType, AutomationConfigMapType})
+		require.NoError(t, err)
+
+		selector, err := labels.Parse(labelSelector)
 		require.NoError(t, err)
 
 		assert.True(t, selector.Matches(labels.Set{ConfigMapTypeLabel: EnvConfigMapType}))
@@ -795,7 +798,10 @@ func TestBuildLabelSelector(t *testing.T) {
 	t.Run("single type", func(t *testing.T) {
 		t.Parallel()
 
-		selector, err := labels.Parse(buildLabelSelector([]string{EnvConfigMapType}))
+		labelSelector, err := buildConfigmapLabelSelector([]string{EnvConfigMapType})
+		require.NoError(t, err)
+
+		selector, err := labels.Parse(labelSelector)
 		require.NoError(t, err)
 
 		assert.True(t, selector.Matches(labels.Set{ConfigMapTypeLabel: EnvConfigMapType}))
