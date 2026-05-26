@@ -81,6 +81,7 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 		namespace:       namespace,
 		InformerFactory: informerFactory,
 		SecretInformer:  informerFactory.Core().V1().Secrets().Informer(),
+		SecretLister:    informerFactory.Core().V1().Secrets().Lister(),
 		Logger:          logger,
 	}
 
