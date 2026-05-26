@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 
 	"k8s.io/client-go/dynamic"
 
@@ -95,12 +96,16 @@ func NewHubConfigMapController(configMapTypes []string, namespace string, client
 		return nil, errUnsupportedCmType
 	}
 
+	labelSelector, err := buildConfigmapLabelSelector(configMapTypes)
+	if err != nil {
+		return nil, err
+	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(
 		clientset,
 		time.Hour*24,
 		informers.WithNamespace(namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = buildConfigmapLabelSelector(configMapTypes)
+			opts.LabelSelector = labelSelector
 		}),
 	)
 
@@ -147,8 +152,12 @@ func NewHubConfigMapController(configMapTypes []string, namespace string, client
 	return c, nil
 }
 
-func buildConfigmapLabelSelector(configMapTypes []string) string {
-	return fmt.Sprintf("%s in (%s)", ConfigMapTypeLabel, strings.Join(configMapTypes, ","))
+func buildConfigmapLabelSelector(configMapTypes []string) (string, error) {
+	req, err := labels.NewRequirement(ConfigMapTypeLabel, selection.In, configMapTypes)
+	if err != nil {
+		return "", err
+	}
+	return labels.NewSelector().Add(*req).String(), nil
 }
 
 func getHubName(configMap *v1.ConfigMap) (string, error) {

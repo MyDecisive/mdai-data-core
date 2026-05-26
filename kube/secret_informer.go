@@ -3,10 +3,11 @@ package kube
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"slices"
 	"time"
 
-	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	corev1 "k8s.io/client-go/listers/core/v1"
 
 	"go.uber.org/zap"
@@ -61,19 +62,22 @@ func (sc *SecretController) Stop() {
 }
 
 func NewSecretController(secretTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*SecretController, error) {
-	unsupportedTypes := lo.Filter(secretTypes, func(item string, _ int) bool {
-		return !lo.Contains(supportedSecretTypes, item)
-	})
-	if len(unsupportedTypes) > 0 {
-		return nil, errors.New("unsupported Secret type")
+	for _, secretType := range secretTypes {
+		if !slices.Contains(supportedSecretTypes, secretType) {
+			return nil, errors.New("unsupported Secret type")
+		}
 	}
 
+	labelSelector, err := buildSecretLabelSelector(secretTypes)
+	if err != nil {
+		return nil, err
+	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(
 		clientset,
 		time.Hour*24,
 		informers.WithNamespace(namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = buildSecretLabelSelector(secretTypes)
+			opts.LabelSelector = labelSelector
 		}),
 	)
 
@@ -88,8 +92,12 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 	return sc, nil
 }
 
-func buildSecretLabelSelector(secretTypes []string) string {
-	return fmt.Sprintf("%s in (%s)", SecretTypeLabel, strings.Join(secretTypes, ","))
+func buildSecretLabelSelector(secretTypes []string) (string, error) {
+	req, err := labels.NewRequirement(SecretTypeLabel, selection.In, secretTypes)
+	if err != nil {
+		return "", err
+	}
+	return labels.NewSelector().Add(*req).String(), nil
 }
 
 // GetSecretByNameAndNamespace returns the requested secret, if it exists.

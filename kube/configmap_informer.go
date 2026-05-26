@@ -2,9 +2,9 @@ package kube
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
-	"github.com/samber/lo"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,19 +51,22 @@ func (cmc *ConfigMapController) Stop() {
 }
 
 func NewConfigMapController(configMapTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*ConfigMapController, error) {
-	unsupportedTypes := lo.Filter(configMapTypes, func(item string, _ int) bool {
-		return !lo.Contains(supportedConfigMapTypes, item)
-	})
-	if len(unsupportedTypes) > 0 {
-		return nil, errUnsupportedCmType
+	for _, cmType := range configMapTypes {
+		if !slices.Contains(supportedConfigMapTypes, cmType) {
+			return nil, errUnsupportedCmType
+		}
 	}
 
+	labelSelector, err := buildConfigmapLabelSelector(configMapTypes)
+	if err != nil {
+		return nil, err
+	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(
 		clientset,
 		time.Hour*24,
 		informers.WithNamespace(namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = buildConfigmapLabelSelector(configMapTypes)
+			opts.LabelSelector = labelSelector
 		}),
 	)
 
