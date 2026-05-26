@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ kube.ConfigMapStore = (*FakeConfigMapStore)(nil)
+var _ kube.HubConfigMapStore = (*FakeConfigMapStore)(nil)
 
 // FakeConfigMapStore is a threadsafe in-memory implementation of kube.ConfigMapStore.
 // It avoids client-go informers and lets tests seed & assert data deterministically.
