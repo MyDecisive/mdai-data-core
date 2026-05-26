@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	corev1 "k8s.io/client-go/listers/core/v1"
 
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
-	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
@@ -39,7 +39,8 @@ type SecretStore interface {
 
 type SecretController struct {
 	InformerFactory informers.SharedInformerFactory
-	SecretInformer  coreinformers.SecretInformer
+	SecretInformer  cache.SharedIndexInformer
+	SecretLister    corev1.SecretLister
 	namespace       string
 	Logger          *zap.Logger
 	stopCh          chan struct{}
@@ -49,7 +50,7 @@ func (sc *SecretController) Run() error {
 	sc.stopCh = make(chan struct{})
 
 	sc.InformerFactory.Start(sc.stopCh)
-	if !cache.WaitForCacheSync(sc.stopCh, sc.SecretInformer.Informer().HasSynced) {
+	if !cache.WaitForCacheSync(sc.stopCh, sc.SecretInformer.HasSynced) {
 		return errors.New("failed to populate Secret cache")
 	}
 	return nil
@@ -76,13 +77,10 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 		}),
 	)
 
-	secretInformer := informerFactory.Core().V1().Secrets()
-	// register the informer
-	secretInformer.Informer()
 	sc := &SecretController{
 		namespace:       namespace,
 		InformerFactory: informerFactory,
-		SecretInformer:  secretInformer,
+		SecretInformer:  informerFactory.Core().V1().Secrets().Informer(),
 		Logger:          logger,
 	}
 
@@ -95,7 +93,7 @@ func buildSecretLabelSelector(secretTypes []string) string {
 
 // GetSecretByName returns the requested secret, if it exists.
 func (sc *SecretController) GetSecretByName(name string) (*v1.Secret, error) {
-	secret, err := sc.SecretInformer.Lister().Secrets(sc.namespace).Get(name)
+	secret, err := sc.SecretLister.Secrets(sc.namespace).Get(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %s/%s: %w", sc.namespace, name, err)
 	}
