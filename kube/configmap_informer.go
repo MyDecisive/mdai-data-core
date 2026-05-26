@@ -34,6 +34,8 @@ type ConfigMapController struct {
 	stopCh          chan struct{}
 }
 
+var _ ConfigMapStore = &ConfigMapController{}
+
 func (cmc *ConfigMapController) Run() error {
 	cmc.stopCh = make(chan struct{})
 
@@ -78,7 +80,7 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 }
 
 // GetConfigmapByName returns the requested configmap, if it exists.
-func (cmc *HubConfigMapController) GetConfigmapByName(name string) (*v1.ConfigMap, error) {
+func (cmc *ConfigMapController) GetConfigmapByName(name string) (*v1.ConfigMap, error) {
 	cm, err := cmc.CmInformer.Lister().ConfigMaps(cmc.namespace).Get(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", cmc.namespace, name, err)
