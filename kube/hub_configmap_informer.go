@@ -345,11 +345,11 @@ func (cmc *HubConfigMapController) GetVariablesSchemaConfigMapDataByHubName(hubN
 	return cmc.getConfigMapDataByHubNameAndType(hubName, VariablesSchemaMapType)
 }
 
-// GetConfigmapByName returns the requested configmap, if it exists.
-func (cmc *HubConfigMapController) GetConfigmapByName(name string) (*v1.ConfigMap, error) {
-	cm, err := cmc.CmInformer.Lister().ConfigMaps(cmc.namespace).Get(name)
+// GetConfigmapByNameAndNamespace returns the requested configmap, if it exists.
+func (cmc *HubConfigMapController) GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error) {
+	cm, err := cmc.CmInformer.Lister().ConfigMaps(namespace).Get(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", cmc.namespace, name, err)
+		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, err)
 	}
 	return cm, nil
 }

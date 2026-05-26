@@ -34,7 +34,7 @@ type SecretStore interface {
 	Run() error
 	Stop()
 
-	GetSecretByName(name string) (*v1.Secret, error)
+	GetSecretByNameAndNamespace(name, namespace string) (*v1.Secret, error)
 }
 
 type SecretController struct {
@@ -65,7 +65,7 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 		return !lo.Contains(supportedSecretTypes, item)
 	})
 	if len(unsupportedTypes) > 0 {
-		return nil, errors.New("unsupported ConfigMap type")
+		return nil, errors.New("unsupported Secret type")
 	}
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(
@@ -92,11 +92,11 @@ func buildSecretLabelSelector(secretTypes []string) string {
 	return fmt.Sprintf("%s in (%s)", SecretTypeLabel, strings.Join(secretTypes, ","))
 }
 
-// GetSecretByName returns the requested secret, if it exists.
-func (sc *SecretController) GetSecretByName(name string) (*v1.Secret, error) {
-	secret, err := sc.SecretLister.Secrets(sc.namespace).Get(name)
+// GetSecretByNameAndNamespace returns the requested secret, if it exists.
+func (sc *SecretController) GetSecretByNameAndNamespace(name, namespace string) (*v1.Secret, error) {
+	secret, err := sc.SecretLister.Secrets(namespace).Get(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret %s/%s: %w", sc.namespace, name, err)
+		return nil, fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
 	}
 	return secret, nil
 }

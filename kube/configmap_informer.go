@@ -23,14 +23,13 @@ type ConfigMapStore interface {
 	Run() error
 	Stop()
 
-	GetConfigmapByName(name string) (*v1.ConfigMap, error)
+	GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error)
 }
 
 type ConfigMapController struct {
 	InformerFactory informers.SharedInformerFactory
 	CmInformer      cache.SharedIndexInformer
 	CmLister        corev1.ConfigMapLister
-	namespace       string
 	Logger          *zap.Logger
 	stopCh          chan struct{}
 }
@@ -69,7 +68,6 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 	)
 
 	c := &ConfigMapController{
-		namespace:       namespace,
 		InformerFactory: informerFactory,
 		CmInformer:      informerFactory.Core().V1().ConfigMaps().Informer(),
 		CmLister:        informerFactory.Core().V1().ConfigMaps().Lister(),
@@ -79,11 +77,11 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 	return c, nil
 }
 
-// GetConfigmapByName returns the requested configmap, if it exists.
-func (cmc *ConfigMapController) GetConfigmapByName(name string) (*v1.ConfigMap, error) {
-	cm, err := cmc.CmLister.ConfigMaps(cmc.namespace).Get(name)
+// GetConfigmapByNameAndNamespace returns the requested configmap, if it exists.
+func (cmc *ConfigMapController) GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error) {
+	cm, err := cmc.CmLister.ConfigMaps(namespace).Get(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", cmc.namespace, name, err)
+		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, err)
 	}
 	return cm, nil
 }

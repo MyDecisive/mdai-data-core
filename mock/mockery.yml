@@ -13,3 +13,4 @@ packages:
   github.com/mydecisive/mdai-data-core/kube:
     interfaces:
       SecretStore:
+      ConfigMapStore:

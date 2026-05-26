@@ -145,7 +145,7 @@ func (f *FakeConfigMapStore) GetAllHubsVariablesSchemaConfigMapData() (map[strin
 	return f.getAllHubsToDataMapByType(kube.VariablesSchemaMapType)
 }
 
-func (f *FakeConfigMapStore) GetConfigmapByName(name string) (*v1.ConfigMap, error) {
+func (f *FakeConfigMapStore) GetConfigmapByNameAndNamespace(name, _ string) (*v1.ConfigMap, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	if f.GetConfigMapByHubNameErr != nil {

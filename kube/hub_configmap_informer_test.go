@@ -21,7 +21,7 @@ import (
 
 const (
 	eventuallyTimeout = time.Second
-	eventuallyTick    = 100 * time.Millisecond
+	eventuallyTick    = 50 * time.Millisecond
 )
 
 func writeKubeconfig(t *testing.T, content string) string {
@@ -64,7 +64,7 @@ func newTestConfigMap(name, namespace, hubName, configMapType string, data map[s
 	}
 }
 
-func newStartedController(t *testing.T, watchedTypes []string, namespace string, configMaps ...*corev1.ConfigMap) *HubConfigMapController {
+func newStartedHubController(t *testing.T, watchedTypes []string, namespace string, configMaps ...*corev1.ConfigMap) *HubConfigMapController {
 	t.Helper()
 
 	objects := make([]runtime.Object, 0, len(configMaps))
@@ -134,7 +134,7 @@ func requireEventually(t *testing.T, check func(*assert.CollectT)) {
 	require.EventuallyWithT(t, check, eventuallyTimeout, eventuallyTick)
 }
 
-func TestConfigMapController_NamespaceFiltering(t *testing.T) {
+func TestHubConfigMapController_NamespaceFiltering(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -208,7 +208,7 @@ func TestConfigMapController_NamespaceFiltering(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 
 			for hubName, wantConfigMap := range tt.wantHubs {
 				requireEventually(t, func(c *assert.CollectT) {
@@ -239,10 +239,10 @@ func TestConfigMapController_NamespaceFiltering(t *testing.T) {
 	}
 }
 
-func TestNewConfigMapController_NonExistentCmType(t *testing.T) {
+func TestNewHubConfigMapController_NonExistentCmType(t *testing.T) {
 	t.Parallel()
 
-	controller, err := NewConfigMapController(
+	controller, err := NewHubConfigMapController(
 		[]string{"hub-nonexistent-cm-type"},
 		"second",
 		fake.NewClientset(),
@@ -366,7 +366,7 @@ func TestGetConfigMapByHubName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			if len(tt.configMaps) == 0 {
 				configMap, err := controller.GetConfigMapByHubName(tt.hubName)
 				require.Nil(t, configMap)
@@ -484,7 +484,7 @@ func TestTypedConfigMapDataByHubName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			requireEventually(t, func(c *assert.CollectT) {
 				data, found, err := tt.getData(controller, tt.hubName)
 				assert.Equal(c, tt.wantFound, found)
@@ -583,7 +583,7 @@ func TestAllHubsTypedConfigMapData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			controller := newStartedController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
+			controller := newStartedHubController(t, tt.watchedTypes, tt.namespace, tt.configMaps...)
 			requireEventually(t, func(c *assert.CollectT) {
 				hubData, err := tt.getData(controller)
 				if tt.wantErrContains != "" {
