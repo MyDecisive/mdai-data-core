@@ -11,6 +11,7 @@ import (
 
 	"github.com/mydecisive/mdai-data-core/eventing"
 	"github.com/mydecisive/mdai-data-core/internal/mocks/eventing/publisher"
+	variables "github.com/mydecisive/mdai-data-core/variables"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
@@ -392,7 +393,8 @@ func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
 	pub := publisher.NewMockPublisher(ctrl)
 	adapter := NewHandlerAdapter(client, logger, pub)
 
-	hub, varName, varType, action, data, corr := "hub-z", "var:foo", "string", "set", "abc", "c-9"
+	hub, varName, action, data, corr := "hub-z", "var:foo", "set", "abc", "c-9"
+	varType := variables.DataTypeString
 	recDepth := 7
 
 	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
@@ -407,7 +409,7 @@ func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
 			var pl eventing.VariablesActionPayload
 			require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
 			assert.Equal(t, varName, pl.VariableRef)
-			assert.Equal(t, varType, pl.DataType)
+			assert.Equal(t, string(varType), pl.DataType)
 			assert.Equal(t, action, pl.Operation)
 			assert.Equal(t, data, pl.Data)
 			return nil

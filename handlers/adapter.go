@@ -20,13 +20,10 @@ import (
 )
 
 const (
-	source         = "eventhub"
-	actionAdded    = "added"
-	actionSet      = "set"
-	actionRemove   = "remove"
-	dataTypeString = "string"
-	dataTypeMap    = "map"
-	dataTypeSet    = "set"
+	source       = "eventhub"
+	actionAdded  = "added"
+	actionSet    = "set"
+	actionRemove = "remove"
 )
 
 // HandlerAdapter is a wrapper for handling variable operations.
@@ -75,7 +72,7 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
 			VarName:        variableKey,
-			VarType:        dataTypeSet,
+			VarType:        variables.DataTypeSet,
 			Action:         actionAdded,
 			Data:           value,
 			CorrelationID:  correlationId,
@@ -100,7 +97,7 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
 			VarName:        variableKey,
-			VarType:        dataTypeSet,
+			VarType:        variables.DataTypeSet,
 			Action:         actionRemove,
 			Data:           value,
 			CorrelationID:  correlationId,
@@ -127,7 +124,7 @@ func (r *HandlerAdapter) SetMapEntry(ctx context.Context, variableKey string, hu
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
 			VarName:        variableKey,
-			VarType:        dataTypeMap,
+			VarType:        variables.DataTypeMap,
 			Action:         actionSet,
 			Data:           value,
 			CorrelationID:  correlationId,
@@ -152,7 +149,7 @@ func (r *HandlerAdapter) RemoveMapEntry(ctx context.Context, variableKey string,
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
 			VarName:        variableKey,
-			VarType:        dataTypeMap,
+			VarType:        variables.DataTypeMap,
 			Action:         actionRemove,
 			Data:           field,
 			CorrelationID:  correlationId,
@@ -176,7 +173,7 @@ func (r *HandlerAdapter) SetStringValue(ctx context.Context, variableKey string,
 		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
 			Hub:            hubName,
 			VarName:        variableKey,
-			VarType:        dataTypeString,
+			VarType:        variables.DataTypeString,
 			Action:         actionSet,
 			Data:           value,
 			CorrelationID:  correlationId,
@@ -242,7 +239,7 @@ func retryWithBackoff(ctx context.Context, fn func() error, maxElapsed time.Dura
 type PublishVarUpdateParams struct {
 	Hub            string
 	VarName        string
-	VarType        string // "set" | "map" | "string" | "int" | "boolean" | ...
+	VarType        variables.DataType
 	Action         string // "added" | "removed" | "set"
 	Data           any    // value or {"field":..., "value":...} or {"field":...} for remove
 	CorrelationID  string
@@ -254,7 +251,7 @@ type PublishVarUpdateParams struct {
 func (r *HandlerAdapter) publishVarUpdate(ctx context.Context, params PublishVarUpdateParams) error {
 	pl := eventing.VariablesActionPayload{
 		VariableRef: params.VarName,
-		DataType:    params.VarType,
+		DataType:    string(params.VarType),
 		Operation:   params.Action,
 		Data:        params.Data,
 	}
