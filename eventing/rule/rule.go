@@ -114,6 +114,7 @@ const (
 	CmdVarSetAdd       CommandType = "variable.set.add"
 	CmdVarSetRemove    CommandType = "variable.set.remove"
 	CmdVarScalarUpdate CommandType = "variable.scalar.update"
+	CmdVarScalarRemove CommandType = "variable.scalar.remove"
 	CmdVarMapAdd       CommandType = "variable.map.add"
 	CmdVarMapRemove    CommandType = "variable.map.remove"
 	CmdWebhookCall     CommandType = "webhook.call"
@@ -125,6 +126,7 @@ var AllCommandTypes = []CommandType{
 	CmdVarSetAdd,
 	CmdVarSetRemove,
 	CmdVarScalarUpdate,
+	CmdVarScalarRemove,
 	CmdVarMapAdd,
 	CmdVarMapRemove,
 	CmdWebhookCall,
@@ -136,6 +138,7 @@ var validCommandTypes = map[CommandType]struct{}{
 	CmdVarSetAdd:       {},
 	CmdVarSetRemove:    {},
 	CmdVarScalarUpdate: {},
+	CmdVarScalarRemove: {},
 	CmdVarMapAdd:       {},
 	CmdVarMapRemove:    {},
 	CmdWebhookCall:     {},
