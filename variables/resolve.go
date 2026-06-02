@@ -16,153 +16,162 @@ type Reader interface {
 	GetMetaHashSet(ctx context.Context, variableKey, hubName string) (string, bool, error)
 }
 
+// ResolveResult is the outcome of a variable read. Value is the canonical form
+// (string for scalars, []string for sets, map[string]string for maps).
+// IsDefault distinguishes a materialized default from a stored value.
+type ResolveResult struct {
+	Value     any
+	Found     bool
+	IsDefault bool
+	DataType  DataType
+}
+
 // Resolve reads the variable; on not-found it materializes defaultRaw via the
-// canonicalizers and returns isDefault=true. defaultRaw==nil means no default.
-// For set/map, a zero-length read is treated as not-found (Valkey collapses
-// empty collections to absent).
+// canonicalizers. defaultRaw==nil means no default declared. For set/map, a
+// zero-length read is treated as not-found.
 func Resolve(
 	ctx context.Context,
 	adapter Reader,
 	hubName, varKey string,
-	dt DataType,
+	dataType DataType,
 	defaultRaw json.RawMessage,
-) (value any, found bool, isDefault bool, err error) {
-	switch dt {
+) (ResolveResult, error) {
+	switch dataType {
 	case DataTypeString, DataTypeInt, DataTypeFloat, DataTypeBoolean:
 		stored, ok, err := adapter.GetString(ctx, varKey, hubName)
 		if err != nil {
-			return nil, false, false, err
+			return ResolveResult{}, err
 		}
 		if ok {
-			return stored, true, false, nil
+			return ResolveResult{Value: stored, Found: true, DataType: dataType}, nil
 		}
-		return resolveScalarDefault(dt, defaultRaw)
+		return resolveScalarDefault(dataType, defaultRaw)
 
 	case DataTypeSet:
 		stored, err := adapter.GetSetAsStringSlice(ctx, varKey, hubName)
 		if err != nil {
-			return nil, false, false, err
+			return ResolveResult{}, err
 		}
 		if len(stored) > 0 {
-			return stored, true, false, nil
+			return ResolveResult{Value: stored, Found: true, DataType: dataType}, nil
 		}
 		return resolveSetDefault(defaultRaw)
 
 	case DataTypeMap:
 		stored, err := adapter.GetMap(ctx, varKey, hubName)
 		if err != nil {
-			return nil, false, false, err
+			return ResolveResult{}, err
 		}
 		if len(stored) > 0 {
-			return stored, true, false, nil
+			return ResolveResult{Value: stored, Found: true, DataType: dataType}, nil
 		}
 		return resolveMapDefault(defaultRaw)
 
 	case DataTypeMetaPriorityList:
 		stored, ok, err := adapter.GetMetaPriorityList(ctx, varKey, hubName)
 		if err != nil {
-			return nil, false, false, err
+			return ResolveResult{}, err
 		}
 		if ok {
-			return stored, true, false, nil
+			return ResolveResult{Value: stored, Found: true, DataType: dataType}, nil
 		}
-		return nil, false, false, nil
+		return ResolveResult{DataType: dataType}, nil
 
 	case DataTypeMetaHashSet:
 		stored, ok, err := adapter.GetMetaHashSet(ctx, varKey, hubName)
 		if err != nil {
-			return nil, false, false, err
+			return ResolveResult{}, err
 		}
 		if ok {
-			return stored, true, false, nil
+			return ResolveResult{Value: stored, Found: true, DataType: dataType}, nil
 		}
-		return nil, false, false, nil
+		return ResolveResult{DataType: dataType}, nil
 
 	default:
-		return nil, false, false, fmt.Errorf("%w: %q", ErrUnsupportedDataType, dt)
+		return ResolveResult{}, fmt.Errorf("%w: %q", ErrUnsupportedDataType, dataType)
 	}
 }
 
-func resolveScalarDefault(dt DataType, defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
+func resolveScalarDefault(dataType DataType, defaultRaw json.RawMessage) (ResolveResult, error) {
 	if defaultRaw == nil {
-		return nil, false, false, nil
+		return ResolveResult{DataType: dataType}, nil
 	}
-	canonical, err := CanonicalizeScalar(defaultRaw, dt)
+	canonical, err := CanonicalizeScalar(defaultRaw, dataType)
 	if err != nil {
-		return nil, false, false, err
+		return ResolveResult{}, err
 	}
-	return canonical, true, true, nil
+	return ResolveResult{Value: canonical, Found: true, IsDefault: true, DataType: dataType}, nil
 }
 
-func resolveSetDefault(defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
+func resolveSetDefault(defaultRaw json.RawMessage) (ResolveResult, error) {
 	if defaultRaw == nil {
-		return nil, false, false, nil
+		return ResolveResult{DataType: DataTypeSet}, nil
 	}
 	canonical, err := CanonicalizeSet(defaultRaw)
 	if err != nil {
-		return nil, false, false, err
+		return ResolveResult{}, err
 	}
-	return canonical, true, true, nil
+	return ResolveResult{Value: canonical, Found: true, IsDefault: true, DataType: DataTypeSet}, nil
 }
 
-func resolveMapDefault(defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
+func resolveMapDefault(defaultRaw json.RawMessage) (ResolveResult, error) {
 	if defaultRaw == nil {
-		return nil, false, false, nil
+		return ResolveResult{DataType: DataTypeMap}, nil
 	}
 	canonical, err := CanonicalizeMap(defaultRaw)
 	if err != nil {
-		return nil, false, false, err
+		return ResolveResult{}, err
 	}
-	return canonical, true, true, nil
+	return ResolveResult{Value: canonical, Found: true, IsDefault: true, DataType: DataTypeMap}, nil
 }
 
-// Typed converts a canonical value (from Resolve) into the typed Go shape for dt:
-// int64, float64, bool, string, []string, or map[string]string.
-func Typed(canonical any, dt DataType) (any, error) {
-	switch dt {
+// Typed returns Value as int64, float64, bool, string, []string, or
+// map[string]string per the originating dataType.
+func (r ResolveResult) Typed() (any, error) {
+	switch r.DataType {
 	case DataTypeString, DataTypeMetaHashSet:
-		str, ok := canonical.(string)
+		str, ok := r.Value.(string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected string for %s, got %T", dt, canonical)
+			return nil, fmt.Errorf("typed: expected string for %s, got %T", r.DataType, r.Value)
 		}
 		return str, nil
 
 	case DataTypeInt:
-		str, ok := canonical.(string)
+		str, ok := r.Value.(string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected canonical string for int, got %T", canonical)
+			return nil, fmt.Errorf("typed: expected canonical string for int, got %T", r.Value)
 		}
 		return strconv.ParseInt(str, 10, 64)
 
 	case DataTypeFloat:
-		str, ok := canonical.(string)
+		str, ok := r.Value.(string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected canonical string for float, got %T", canonical)
+			return nil, fmt.Errorf("typed: expected canonical string for float, got %T", r.Value)
 		}
 		return strconv.ParseFloat(str, 64)
 
 	case DataTypeBoolean:
-		str, ok := canonical.(string)
+		str, ok := r.Value.(string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected canonical string for boolean, got %T", canonical)
+			return nil, fmt.Errorf("typed: expected canonical string for boolean, got %T", r.Value)
 		}
 		return strconv.ParseBool(str)
 
 	case DataTypeSet, DataTypeMetaPriorityList:
-		slice, ok := canonical.([]string)
+		slice, ok := r.Value.([]string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected []string for %s, got %T", dt, canonical)
+			return nil, fmt.Errorf("typed: expected []string for %s, got %T", r.DataType, r.Value)
 		}
 		return slice, nil
 
 	case DataTypeMap:
-		hash, ok := canonical.(map[string]string)
+		hash, ok := r.Value.(map[string]string)
 		if !ok {
-			return nil, fmt.Errorf("typed: expected map[string]string for map, got %T", canonical)
+			return nil, fmt.Errorf("typed: expected map[string]string for map, got %T", r.Value)
 		}
 		return hash, nil
 
 	default:
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDataType, dt)
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDataType, r.DataType)
 	}
 }

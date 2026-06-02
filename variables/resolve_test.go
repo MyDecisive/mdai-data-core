@@ -88,29 +88,29 @@ func TestResolve_ScalarStored(t *testing.T) {
 	reader.str["h:v"] = "42"
 	reader.strOK["h:v"] = true
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, "42", val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, "42", res.Value)
 }
 
 func TestResolve_ScalarDefaultApplied(t *testing.T) {
 	reader := newFakeReader()
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.True(t, isDefault)
-	assert.Equal(t, "100", val)
+	assert.True(t, res.Found)
+	assert.True(t, res.IsDefault)
+	assert.Equal(t, "100", res.Value)
 }
 
 func TestResolve_ScalarNoStoredNoDefault(t *testing.T) {
 	reader := newFakeReader()
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeString, nil)
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeString, nil)
 	require.NoError(t, err)
-	assert.False(t, found)
-	assert.False(t, isDefault)
-	assert.Nil(t, val)
+	assert.False(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Nil(t, res.Value)
 }
 
 func TestResolve_ScalarStoredEmptyIsNotDefault(t *testing.T) {
@@ -118,73 +118,73 @@ func TestResolve_ScalarStoredEmptyIsNotDefault(t *testing.T) {
 	reader.str["h:v"] = ""
 	reader.strOK["h:v"] = true
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeString, json.RawMessage(`"fallback"`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeString, json.RawMessage(`"fallback"`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, "", val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, "", res.Value)
 }
 
 func TestResolve_FloatDefaultCanonicalized(t *testing.T) {
 	reader := newFakeReader()
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeFloat, json.RawMessage(`1.50`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeFloat, json.RawMessage(`1.50`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.True(t, isDefault)
-	assert.Equal(t, "1.5", val)
+	assert.True(t, res.Found)
+	assert.True(t, res.IsDefault)
+	assert.Equal(t, "1.5", res.Value)
 }
 
 func TestResolve_SetStored(t *testing.T) {
 	reader := newFakeReader()
 	reader.set["h:v"] = []string{"a", "b"}
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["x"]`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["x"]`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, []string{"a", "b"}, val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, []string{"a", "b"}, res.Value)
 }
 
 func TestResolve_SetEmptyTreatedAsAbsent(t *testing.T) {
 	reader := newFakeReader()
 	reader.set["h:v"] = []string{}
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["x"]`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["x"]`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.True(t, isDefault)
-	assert.Equal(t, []string{"x"}, val)
+	assert.True(t, res.Found)
+	assert.True(t, res.IsDefault)
+	assert.Equal(t, []string{"x"}, res.Value)
 }
 
 func TestResolve_SetNoDefault(t *testing.T) {
 	reader := newFakeReader()
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, nil)
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, nil)
 	require.NoError(t, err)
-	assert.False(t, found)
-	assert.False(t, isDefault)
-	assert.Nil(t, val)
+	assert.False(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Nil(t, res.Value)
 }
 
 func TestResolve_MapStored(t *testing.T) {
 	reader := newFakeReader()
 	reader.mp["h:v"] = map[string]string{"a": "1"}
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeMap, json.RawMessage(`{"x":"y"}`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeMap, json.RawMessage(`{"x":"y"}`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, map[string]string{"a": "1"}, val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, map[string]string{"a": "1"}, res.Value)
 }
 
 func TestResolve_MapEmptyTreatedAsAbsent(t *testing.T) {
 	reader := newFakeReader()
 	reader.mp["h:v"] = map[string]string{}
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "v", DataTypeMap, json.RawMessage(`{"x":"y"}`))
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeMap, json.RawMessage(`{"x":"y"}`))
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.True(t, isDefault)
-	assert.Equal(t, map[string]string{"x": "y"}, val)
+	assert.True(t, res.Found)
+	assert.True(t, res.IsDefault)
+	assert.Equal(t, map[string]string{"x": "y"}, res.Value)
 }
 
 func TestResolve_MetaTypesNoDefault(t *testing.T) {
@@ -194,98 +194,116 @@ func TestResolve_MetaTypesNoDefault(t *testing.T) {
 	reader.metaHS["h:h"] = "value"
 	reader.metaHSOK["h:h"] = true
 
-	val, found, isDefault, err := Resolve(context.Background(), reader, "h", "p", DataTypeMetaPriorityList, nil)
+	res, err := Resolve(context.Background(), reader, "h", "p", DataTypeMetaPriorityList, nil)
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, []string{"a"}, val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, []string{"a"}, res.Value)
 
-	val, found, isDefault, err = Resolve(context.Background(), reader, "h", "h", DataTypeMetaHashSet, nil)
+	res, err = Resolve(context.Background(), reader, "h", "h", DataTypeMetaHashSet, nil)
 	require.NoError(t, err)
-	assert.True(t, found)
-	assert.False(t, isDefault)
-	assert.Equal(t, "value", val)
+	assert.True(t, res.Found)
+	assert.False(t, res.IsDefault)
+	assert.Equal(t, "value", res.Value)
 }
 
 func TestResolve_MetaTypesAbsent(t *testing.T) {
 	reader := newFakeReader()
-	val, found, _, err := Resolve(context.Background(), reader, "h", "p", DataTypeMetaPriorityList, nil)
+	res, err := Resolve(context.Background(), reader, "h", "p", DataTypeMetaPriorityList, nil)
 	require.NoError(t, err)
-	assert.False(t, found)
-	assert.Nil(t, val)
+	assert.False(t, res.Found)
+	assert.Nil(t, res.Value)
 }
 
 func TestResolve_ErrorPropagation(t *testing.T) {
 	reader := newFakeReader()
 	reader.forceErr = errors.New("boom")
 
-	_, _, _, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
+	_, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`100`))
 	require.Error(t, err)
 }
 
 func TestResolve_UnsupportedDataTypeSentinel(t *testing.T) {
 	reader := newFakeReader()
-	_, _, _, err := Resolve(context.Background(), reader, "h", "v", DataType("bogus"), nil)
+	_, err := Resolve(context.Background(), reader, "h", "v", DataType("bogus"), nil)
 	require.ErrorIs(t, err, ErrUnsupportedDataType)
 }
 
-func TestTyped_UnsupportedDataTypeSentinel(t *testing.T) {
-	_, err := Typed("x", DataType("bogus"))
+func TestResolveResult_TypedUnsupportedDataTypeSentinel(t *testing.T) {
+	_, err := ResolveResult{Value: "x", DataType: DataType("bogus")}.Typed()
 	require.ErrorIs(t, err, ErrUnsupportedDataType)
 }
 
 func TestResolve_InvalidDefaultSurfaces(t *testing.T) {
 	reader := newFakeReader()
-	_, _, _, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`"not-an-int"`))
+	_, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`"not-an-int"`))
 	require.ErrorIs(t, err, ErrInvalidDefault)
 }
 
-func TestTyped_Scalars(t *testing.T) {
-	value, err := Typed("42", DataTypeInt)
+func TestResolveResult_Typed_Scalars(t *testing.T) {
+	value, err := ResolveResult{Value: "42", DataType: DataTypeInt}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), value)
 
-	value, err = Typed("1.5", DataTypeFloat)
+	value, err = ResolveResult{Value: "1.5", DataType: DataTypeFloat}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, 1.5, value)
 
-	value, err = Typed("true", DataTypeBoolean)
+	value, err = ResolveResult{Value: "true", DataType: DataTypeBoolean}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, true, value)
 
-	value, err = Typed("hello", DataTypeString)
+	value, err = ResolveResult{Value: "hello", DataType: DataTypeString}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, "hello", value)
 }
 
-func TestTyped_Collections(t *testing.T) {
-	value, err := Typed([]string{"a", "b"}, DataTypeSet)
+func TestResolveResult_Typed_Collections(t *testing.T) {
+	value, err := ResolveResult{Value: []string{"a", "b"}, DataType: DataTypeSet}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a", "b"}, value)
 
-	value, err = Typed(map[string]string{"a": "1"}, DataTypeMap)
+	value, err = ResolveResult{Value: map[string]string{"a": "1"}, DataType: DataTypeMap}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"a": "1"}, value)
 }
 
-func TestTyped_MetaTypes(t *testing.T) {
-	value, err := Typed([]string{"a"}, DataTypeMetaPriorityList)
+func TestResolveResult_Typed_MetaTypes(t *testing.T) {
+	value, err := ResolveResult{Value: []string{"a"}, DataType: DataTypeMetaPriorityList}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a"}, value)
 
-	value, err = Typed("value", DataTypeMetaHashSet)
+	value, err = ResolveResult{Value: "value", DataType: DataTypeMetaHashSet}.Typed()
 	require.NoError(t, err)
 	assert.Equal(t, "value", value)
 }
 
-func TestTyped_TypeMismatch(t *testing.T) {
-	_, err := Typed("not-int", DataTypeInt)
+func TestResolveResult_Typed_TypeMismatch(t *testing.T) {
+	_, err := ResolveResult{Value: "not-int", DataType: DataTypeInt}.Typed()
 	require.Error(t, err)
 
-	_, err = Typed(42, DataTypeString)
+	_, err = ResolveResult{Value: 42, DataType: DataTypeString}.Typed()
 	require.Error(t, err)
+}
+
+func TestResolve_TypedIntegratesWithResolve(t *testing.T) {
+	reader := newFakeReader()
+	reader.str["h:v"] = "42"
+	reader.strOK["h:v"] = true
+
+	res, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, nil)
+	require.NoError(t, err)
+	typed, err := res.Typed()
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), typed)
 }
 
 func TestValkeyAdapterSatisfiesReader(t *testing.T) {
 	var _ Reader = (*ValkeyAdapter)(nil)
+}
+
+func TestCanonicalizeSet_RejectsNullElementsViaResolve(t *testing.T) {
+	reader := newFakeReader()
+	_, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["a", null]`))
+	require.ErrorIs(t, err, ErrInvalidDefault)
 }

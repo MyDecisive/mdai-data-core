@@ -18,10 +18,10 @@ func isNullLiteral(raw json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(raw), nullLiteral)
 }
 
-// CanonicalizeScalar returns the canonical Valkey string form of raw as dt.
-// Non-scalar dt returns an error.
-func CanonicalizeScalar(raw json.RawMessage, dt DataType) (string, error) {
-	switch dt {
+// CanonicalizeScalar returns the canonical Valkey string form of raw as dataType.
+// Non-scalar dataType returns an error.
+func CanonicalizeScalar(raw json.RawMessage, dataType DataType) (string, error) {
+	switch dataType {
 	case DataTypeString:
 		var decoded string
 		if err := json.Unmarshal(raw, &decoded); err != nil {
@@ -57,7 +57,7 @@ func CanonicalizeScalar(raw json.RawMessage, dt DataType) (string, error) {
 		return strconv.FormatFloat(decoded, 'g', -1, 64), nil
 
 	default:
-		return "", fmt.Errorf("%w: %s is not a scalar type", ErrInvalidDefault, dt)
+		return "", fmt.Errorf("%w: %s is not a scalar type", ErrInvalidDefault, dataType)
 	}
 }
 
