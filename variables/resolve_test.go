@@ -223,6 +223,17 @@ func TestResolve_ErrorPropagation(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestResolve_UnsupportedDataTypeSentinel(t *testing.T) {
+	reader := newFakeReader()
+	_, _, _, err := Resolve(context.Background(), reader, "h", "v", DataType("bogus"), nil)
+	require.ErrorIs(t, err, ErrUnsupportedDataType)
+}
+
+func TestTyped_UnsupportedDataTypeSentinel(t *testing.T) {
+	_, err := Typed("x", DataType("bogus"))
+	require.ErrorIs(t, err, ErrUnsupportedDataType)
+}
+
 func TestResolve_InvalidDefaultSurfaces(t *testing.T) {
 	reader := newFakeReader()
 	_, _, _, err := Resolve(context.Background(), reader, "h", "v", DataTypeInt, json.RawMessage(`"not-an-int"`))

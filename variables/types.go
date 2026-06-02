@@ -1,10 +1,16 @@
 package ValkeyAdapter
 
+import "errors"
+
 // DataType is the canonical set of variable data types recognized across MDAI
 // components (operator CRD, gateway, event-hub, data-core). The literal string
 // values match the kubebuilder enum on MdaiHub's VariableDataType field and are
 // the wire format used in event payloads and audit entries.
 type DataType string
+
+// ErrUnsupportedDataType is returned by Resolve and Typed when given a DataType
+// not in the canonical enum.
+var ErrUnsupportedDataType = errors.New("unsupported dataType")
 
 const (
 	DataTypeInt     DataType = "int"     // signed integer, stored as a string in Valkey

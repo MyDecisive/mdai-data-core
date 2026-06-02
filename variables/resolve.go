@@ -79,11 +79,11 @@ func Resolve(
 		return nil, false, false, nil
 
 	default:
-		return nil, false, false, fmt.Errorf("resolve: unsupported dataType %q", dt)
+		return nil, false, false, fmt.Errorf("%w: %q", ErrUnsupportedDataType, dt)
 	}
 }
 
-func resolveScalarDefault(dt DataType, defaultRaw json.RawMessage) (any, bool, bool, error) {
+func resolveScalarDefault(dt DataType, defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
 	if defaultRaw == nil {
 		return nil, false, false, nil
 	}
@@ -94,7 +94,7 @@ func resolveScalarDefault(dt DataType, defaultRaw json.RawMessage) (any, bool, b
 	return canonical, true, true, nil
 }
 
-func resolveSetDefault(defaultRaw json.RawMessage) (any, bool, bool, error) {
+func resolveSetDefault(defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
 	if defaultRaw == nil {
 		return nil, false, false, nil
 	}
@@ -105,7 +105,7 @@ func resolveSetDefault(defaultRaw json.RawMessage) (any, bool, bool, error) {
 	return canonical, true, true, nil
 }
 
-func resolveMapDefault(defaultRaw json.RawMessage) (any, bool, bool, error) {
+func resolveMapDefault(defaultRaw json.RawMessage) (value any, found bool, isDefault bool, err error) {
 	if defaultRaw == nil {
 		return nil, false, false, nil
 	}
@@ -163,6 +163,6 @@ func Typed(canonical any, dt DataType) (any, error) {
 		return hash, nil
 
 	default:
-		return nil, fmt.Errorf("typed: unsupported dataType %q", dt)
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDataType, dt)
 	}
 }
