@@ -1,6 +1,7 @@
 package ValkeyAdapter
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,12 @@ import (
 
 // ErrInvalidDefault is the sentinel for any canonicalization failure.
 var ErrInvalidDefault = errors.New("invalid default")
+
+var nullLiteral = []byte("null")
+
+func isNullLiteral(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), nullLiteral)
+}
 
 // CanonicalizeScalar returns the canonical Valkey string form of raw as dt.
 // Non-scalar dt returns an error.
@@ -56,18 +63,40 @@ func CanonicalizeScalar(raw json.RawMessage, dt DataType) (string, error) {
 
 // CanonicalizeSet decodes raw as []string.
 func CanonicalizeSet(raw json.RawMessage) ([]string, error) {
-	var decoded []string
-	if err := json.Unmarshal(raw, &decoded); err != nil {
+	var elements []json.RawMessage
+	if err := json.Unmarshal(raw, &elements); err != nil {
 		return nil, fmt.Errorf("%w: array of strings expected: %w", ErrInvalidDefault, err)
 	}
-	return decoded, nil
+	out := make([]string, 0, len(elements))
+	for i, elem := range elements {
+		if isNullLiteral(elem) {
+			return nil, fmt.Errorf("%w: array element %d is null", ErrInvalidDefault, i)
+		}
+		var member string
+		if err := json.Unmarshal(elem, &member); err != nil {
+			return nil, fmt.Errorf("%w: array of strings expected: %w", ErrInvalidDefault, err)
+		}
+		out = append(out, member)
+	}
+	return out, nil
 }
 
 // CanonicalizeMap decodes raw as map[string]string.
 func CanonicalizeMap(raw json.RawMessage) (map[string]string, error) {
-	var decoded map[string]string
-	if err := json.Unmarshal(raw, &decoded); err != nil {
+	var entries map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, fmt.Errorf("%w: object with string values expected: %w", ErrInvalidDefault, err)
 	}
-	return decoded, nil
+	out := make(map[string]string, len(entries))
+	for key, rawValue := range entries {
+		if isNullLiteral(rawValue) {
+			return nil, fmt.Errorf("%w: value for key %q is null", ErrInvalidDefault, key)
+		}
+		var value string
+		if err := json.Unmarshal(rawValue, &value); err != nil {
+			return nil, fmt.Errorf("%w: object with string values expected: %w", ErrInvalidDefault, err)
+		}
+		out[key] = value
+	}
+	return out, nil
 }

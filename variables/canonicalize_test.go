@@ -118,6 +118,33 @@ func TestCanonicalizeMap(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeSet_RejectsNullElements(t *testing.T) {
+	cases := []string{
+		`[null]`,
+		`["a", null]`,
+		`["a", null, "b"]`,
+		`[ null ]`,
+	}
+	for _, raw := range cases {
+		_, err := CanonicalizeSet(json.RawMessage(raw))
+		require.ErrorIs(t, err, ErrInvalidDefault, "input %s", raw)
+		require.Contains(t, err.Error(), "null")
+	}
+}
+
+func TestCanonicalizeMap_RejectsNullValues(t *testing.T) {
+	cases := []string{
+		`{"k": null}`,
+		`{"a": "1", "b": null}`,
+		`{"k": null, "j": "v"}`,
+	}
+	for _, raw := range cases {
+		_, err := CanonicalizeMap(json.RawMessage(raw))
+		require.ErrorIs(t, err, ErrInvalidDefault, "input %s", raw)
+		require.Contains(t, err.Error(), "null")
+	}
+}
+
 func TestCanonicalizeErrorsUnwrap(t *testing.T) {
 	_, err := CanonicalizeScalar(json.RawMessage(`"not-int"`), DataTypeInt)
 	require.True(t, errors.Is(err, ErrInvalidDefault))
