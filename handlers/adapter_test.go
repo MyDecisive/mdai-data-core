@@ -11,7 +11,7 @@ import (
 
 	"github.com/mydecisive/mdai-data-core/eventing"
 	"github.com/mydecisive/mdai-data-core/internal/mocks/eventing/publisher"
-	variables "github.com/mydecisive/mdai-data-core/variables"
+	"github.com/mydecisive/mdai-data-core/variables"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"

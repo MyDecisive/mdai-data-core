@@ -1,4 +1,4 @@
-package ValkeyAdapter
+package variables
 
 import (
 	"context"

@@ -14,7 +14,7 @@ import (
 	"github.com/mydecisive/mdai-data-core/audit"
 	"github.com/mydecisive/mdai-data-core/eventing"
 	"github.com/mydecisive/mdai-data-core/eventing/publisher"
-	variables "github.com/mydecisive/mdai-data-core/variables"
+	"github.com/mydecisive/mdai-data-core/variables"
 	"github.com/valkey-io/valkey-go"
 	"go.uber.org/zap"
 )

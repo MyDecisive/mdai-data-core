@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"go.uber.org/zap"
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	coreinformers "k8s.io/client-go/informers/core/v1"
