@@ -25,7 +25,6 @@ linters:
       rules:
         - name: comment-spacings
         - name: import-shadowing
-        - name: redundant-import-alias
   exclusions:
     generated: lax
     rules:
