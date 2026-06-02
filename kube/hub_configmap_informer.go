@@ -50,7 +50,8 @@ var (
 )
 
 type HubConfigMapStore interface {
-	ConfigMapStore
+	Run() error
+	Stop()
 
 	// Deprecated: use a type-specific GetAllHubs*ConfigMapData helper for deterministic lookups.
 	GetAllHubsToDataMap() (map[string]map[string]string, error)
@@ -352,13 +353,4 @@ func (cmc *HubConfigMapController) GetAutomationConfigMapDataByHubName(hubName s
 // GetVariablesSchemaConfigMapDataByHubName returns variables schema config map data for the given hub.
 func (cmc *HubConfigMapController) GetVariablesSchemaConfigMapDataByHubName(hubName string) (map[string]string, bool, error) {
 	return cmc.getConfigMapDataByHubNameAndType(hubName, VariablesSchemaMapType)
-}
-
-// GetConfigmapByNameAndNamespace returns the requested configmap, if it exists.
-func (cmc *HubConfigMapController) GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error) {
-	cm, err := cmc.CmInformer.Lister().ConfigMaps(namespace).Get(name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, err)
-	}
-	return cm, nil
 }
