@@ -1,7 +1,6 @@
 package variables
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,12 +10,6 @@ import (
 
 // ErrInvalidDefault is the sentinel for any canonicalization failure.
 var ErrInvalidDefault = errors.New("invalid default")
-
-var nullLiteral = []byte("null")
-
-func isNullLiteral(raw json.RawMessage) bool {
-	return bytes.Equal(bytes.TrimSpace(raw), nullLiteral)
-}
 
 // CanonicalizeScalar returns the canonical Valkey string form of raw as dataType.
 // Non-scalar dataType returns an error.
@@ -61,42 +54,44 @@ func CanonicalizeScalar(raw json.RawMessage, dataType DataType) (string, error) 
 	}
 }
 
-// CanonicalizeSet decodes raw as []string.
+// CanonicalizeSet decodes raw as []string. Null elements and non-string
+// elements are rejected.
 func CanonicalizeSet(raw json.RawMessage) ([]string, error) {
-	var elements []json.RawMessage
+	var elements []any
 	if err := json.Unmarshal(raw, &elements); err != nil {
 		return nil, fmt.Errorf("%w: array of strings expected: %w", ErrInvalidDefault, err)
 	}
 	out := make([]string, 0, len(elements))
 	for i, elem := range elements {
-		if isNullLiteral(elem) {
+		if elem == nil {
 			return nil, fmt.Errorf("%w: array element %d is null", ErrInvalidDefault, i)
 		}
-		var member string
-		if err := json.Unmarshal(elem, &member); err != nil {
-			return nil, fmt.Errorf("%w: array of strings expected: %w", ErrInvalidDefault, err)
+		s, ok := elem.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: array element %d is not a string (got %T)", ErrInvalidDefault, i, elem)
 		}
-		out = append(out, member)
+		out = append(out, s)
 	}
 	return out, nil
 }
 
-// CanonicalizeMap decodes raw as map[string]string.
+// CanonicalizeMap decodes raw as map[string]string. Null values and non-string
+// values are rejected.
 func CanonicalizeMap(raw json.RawMessage) (map[string]string, error) {
-	var entries map[string]json.RawMessage
+	var entries map[string]any
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, fmt.Errorf("%w: object with string values expected: %w", ErrInvalidDefault, err)
 	}
 	out := make(map[string]string, len(entries))
-	for key, rawValue := range entries {
-		if isNullLiteral(rawValue) {
+	for key, value := range entries {
+		if value == nil {
 			return nil, fmt.Errorf("%w: value for key %q is null", ErrInvalidDefault, key)
 		}
-		var value string
-		if err := json.Unmarshal(rawValue, &value); err != nil {
-			return nil, fmt.Errorf("%w: object with string values expected: %w", ErrInvalidDefault, err)
+		s, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: value for key %q is not a string (got %T)", ErrInvalidDefault, key, value)
 		}
-		out[key] = value
+		out[key] = s
 	}
 	return out, nil
 }
