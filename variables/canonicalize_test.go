@@ -132,6 +132,20 @@ func TestCanonicalizeSet_RejectsNullElements(t *testing.T) {
 	}
 }
 
+func TestCanonicalize_DistinguishesNullLiteralFromStringNull(t *testing.T) {
+	t.Run("set with quoted null string", func(t *testing.T) {
+		got, err := CanonicalizeSet(json.RawMessage(`["a", "null", "b"]`))
+		require.NoError(t, err)
+		require.Equal(t, []string{"a", "null", "b"}, got)
+	})
+
+	t.Run("map with quoted null string value", func(t *testing.T) {
+		got, err := CanonicalizeMap(json.RawMessage(`{"k": "null", "j": "v"}`))
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"k": "null", "j": "v"}, got)
+	})
+}
+
 func TestCanonicalizeMap_RejectsNullValues(t *testing.T) {
 	cases := []string{
 		`{"k": null}`,
