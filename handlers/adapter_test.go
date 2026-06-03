@@ -124,6 +124,41 @@ func TestSetStringValue(t *testing.T) {
 	}
 }
 
+func TestDeleteStringValue(t *testing.T) {
+	hubName := "my-hub"
+	variableKey := "my-var"
+	correlationId := "corr-id-123"
+	ctx := context.Background()
+
+	adapter, client, pub, ctrl := newAdapterWithMocks(t)
+	defer ctrl.Finish()
+	adapter.retryMaxTime = 0
+
+	client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).Return(
+		[]valkey.ValkeyResult{
+			vmock.Result(vmock.ValkeyInt64(1)), // DEL: 1 key removed
+			vmock.Result(vmock.ValkeyInt64(1)), // XADD
+		},
+	)
+	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, event eventing.MdaiEvent, subject eventing.MdaiEventSubject) error {
+			assert.Equal(t, "var.remove", event.Name)
+			assert.Equal(t, hubName, event.HubName)
+			assert.Equal(t, correlationId, event.CorrelationID)
+			assert.Equal(t, fmt.Sprintf("trigger.vars.remove.%s.%s", hubName, variableKey), subject.String())
+
+			var payload eventing.VariablesActionPayload
+			require.NoError(t, json.Unmarshal([]byte(event.Payload), &payload))
+			assert.Equal(t, variableKey, payload.VariableRef)
+			assert.Equal(t, "string", payload.DataType)
+			assert.Equal(t, "remove", payload.Operation)
+			assert.Equal(t, "", payload.Data)
+			return nil
+		})
+
+	require.NoError(t, adapter.DeleteStringValue(ctx, variableKey, hubName, correlationId, 0))
+}
+
 func TestMakeAuditEntry(t *testing.T) {
 	testCases := []struct {
 		caseName      string
