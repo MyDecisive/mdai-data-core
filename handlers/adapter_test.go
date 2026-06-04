@@ -36,7 +36,7 @@ func TestSetStringValue(t *testing.T) {
 	variableKey := "my-var"
 	value := "my-value"
 	correlationId := "corr-id-123"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	testCases := []struct {
 		name           string
@@ -128,7 +128,7 @@ func TestDeleteStringValue(t *testing.T) {
 	hubName := "my-hub"
 	variableKey := "my-var"
 	correlationId := "corr-id-123"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -152,7 +152,7 @@ func TestDeleteStringValue(t *testing.T) {
 			assert.Equal(t, variableKey, payload.VariableRef)
 			assert.Equal(t, "string", payload.DataType)
 			assert.Equal(t, "remove", payload.Operation)
-			assert.Equal(t, "", payload.Data)
+			assert.Empty(t, payload.Data)
 			return nil
 		})
 
@@ -197,7 +197,7 @@ func TestMakeAuditEntry(t *testing.T) {
 
 //nolint:goconst
 func TestAddElementToSet_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "green", "corr-1"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -232,7 +232,7 @@ func TestAddElementToSet_Success(t *testing.T) {
 }
 
 func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "blue", "corr-2"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -267,7 +267,7 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 }
 
 func TestRemoveElementFromSet_PublishError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "red", "corr-3"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -290,7 +290,7 @@ func TestRemoveElementFromSet_PublishError(t *testing.T) {
 }
 
 func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, field, value, corr := "hub-b", "var:map:settings", "mode", "auto", "corr-4"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -322,7 +322,7 @@ func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
 }
 
 func TestRemoveMapEntry_BehaviorAndPayload(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, field, corr := "hub-b", "var:map:settings", "obsolete", "corr-5"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -376,7 +376,7 @@ func TestAccumulateErrors_MultipleAreAggregated(t *testing.T) {
 }
 
 func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	failures := 2
 	calls := 0
 
@@ -393,7 +393,7 @@ func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
 }
 
 func TestRetryWithBackoff_NoRetryWhenMaxZero(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	calls := 0
 	err := retryWithBackoff(ctx, func() error {
 		calls++
@@ -405,7 +405,7 @@ func TestRetryWithBackoff_NoRetryWhenMaxZero(t *testing.T) {
 }
 
 func TestRetryWithBackoff_TimesOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	start := time.Now()
 
 	err := retryWithBackoff(ctx, func() error {
@@ -419,7 +419,7 @@ func TestRetryWithBackoff_TimesOut(t *testing.T) {
 }
 
 func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := zap.NewNop()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

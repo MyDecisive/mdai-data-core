@@ -32,7 +32,7 @@ func TestNewConfig_DefaultsWhenEnvUnset(t *testing.T) {
 	cfg := NewConfig()
 
 	require.Equal(t, []string{defaultEndpoint}, cfg.InitAddress)
-	require.Equal(t, "", cfg.Password)
+	require.Empty(t, cfg.Password)
 	require.Equal(t, defaultInitialBackoff, cfg.InitialBackoffInterval)
 	require.Equal(t, defaultMaxElapsedBackoff, cfg.MaxBackoffElapsedTime)
 }
@@ -72,7 +72,7 @@ func TestNewConfig_EmptyStringInEnvDoesNotFallback(t *testing.T) {
 
 	// Because GetEnvVariableWithDefault uses LookupEnv, empty string is respected (no default fallback)
 	require.Equal(t, []string{""}, cfg.InitAddress)
-	require.Equal(t, "", cfg.Password)
+	require.Empty(t, cfg.Password)
 
 	// Durations remain defaults
 	require.Equal(t, defaultInitialBackoff, cfg.InitialBackoffInterval)
