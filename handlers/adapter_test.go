@@ -36,7 +36,7 @@ func TestSetStringValue(t *testing.T) {
 	variableKey := "my-var"
 	value := "my-value"
 	correlationId := "corr-id-123"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	testCases := []struct {
 		name           string
@@ -124,6 +124,41 @@ func TestSetStringValue(t *testing.T) {
 	}
 }
 
+func TestDeleteStringValue(t *testing.T) {
+	hubName := "my-hub"
+	variableKey := "my-var"
+	correlationId := "corr-id-123"
+	ctx := t.Context()
+
+	adapter, client, pub, ctrl := newAdapterWithMocks(t)
+	defer ctrl.Finish()
+	adapter.retryMaxTime = 0
+
+	client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).Return(
+		[]valkey.ValkeyResult{
+			vmock.Result(vmock.ValkeyInt64(1)), // DEL: 1 key removed
+			vmock.Result(vmock.ValkeyInt64(1)), // XADD
+		},
+	)
+	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, event eventing.MdaiEvent, subject eventing.MdaiEventSubject) error {
+			assert.Equal(t, "var.remove", event.Name)
+			assert.Equal(t, hubName, event.HubName)
+			assert.Equal(t, correlationId, event.CorrelationID)
+			assert.Equal(t, fmt.Sprintf("trigger.vars.remove.%s.%s", hubName, variableKey), subject.String())
+
+			var payload eventing.VariablesActionPayload
+			require.NoError(t, json.Unmarshal([]byte(event.Payload), &payload))
+			assert.Equal(t, variableKey, payload.VariableRef)
+			assert.Equal(t, "string", payload.DataType)
+			assert.Equal(t, "remove", payload.Operation)
+			assert.Empty(t, payload.Data)
+			return nil
+		})
+
+	require.NoError(t, adapter.DeleteStringValue(ctx, variableKey, hubName, correlationId, 0))
+}
+
 func TestMakeAuditEntry(t *testing.T) {
 	testCases := []struct {
 		caseName      string
@@ -162,7 +197,7 @@ func TestMakeAuditEntry(t *testing.T) {
 
 //nolint:goconst
 func TestAddElementToSet_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "green", "corr-1"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -197,7 +232,7 @@ func TestAddElementToSet_Success(t *testing.T) {
 }
 
 func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "blue", "corr-2"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -232,7 +267,7 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 }
 
 func TestRemoveElementFromSet_PublishError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, value, corr := "hub-a", "var:set:tags", "red", "corr-3"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -255,7 +290,7 @@ func TestRemoveElementFromSet_PublishError(t *testing.T) {
 }
 
 func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, field, value, corr := "hub-b", "var:map:settings", "mode", "auto", "corr-4"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -287,7 +322,7 @@ func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
 }
 
 func TestRemoveMapEntry_BehaviorAndPayload(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hub, key, field, corr := "hub-b", "var:map:settings", "obsolete", "corr-5"
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
@@ -341,7 +376,7 @@ func TestAccumulateErrors_MultipleAreAggregated(t *testing.T) {
 }
 
 func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	failures := 2
 	calls := 0
 
@@ -358,7 +393,7 @@ func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
 }
 
 func TestRetryWithBackoff_NoRetryWhenMaxZero(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	calls := 0
 	err := retryWithBackoff(ctx, func() error {
 		calls++
@@ -370,7 +405,7 @@ func TestRetryWithBackoff_NoRetryWhenMaxZero(t *testing.T) {
 }
 
 func TestRetryWithBackoff_TimesOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	start := time.Now()
 
 	err := retryWithBackoff(ctx, func() error {
@@ -384,7 +419,7 @@ func TestRetryWithBackoff_TimesOut(t *testing.T) {
 }
 
 func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := zap.NewNop()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

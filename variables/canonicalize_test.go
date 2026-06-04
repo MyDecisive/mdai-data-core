@@ -16,7 +16,7 @@ func TestCanonicalizeScalar_String(t *testing.T) {
 
 	got, err = CanonicalizeScalar(json.RawMessage(`""`), DataTypeString)
 	require.NoError(t, err)
-	assert.Equal(t, "", got)
+	assert.Empty(t, got)
 
 	_, err = CanonicalizeScalar(json.RawMessage(`123`), DataTypeString)
 	require.ErrorIs(t, err, ErrInvalidDefault)

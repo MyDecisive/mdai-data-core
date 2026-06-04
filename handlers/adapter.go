@@ -183,6 +183,31 @@ func (r *HandlerAdapter) SetStringValue(ctx context.Context, variableKey string,
 	}, r.retryMaxTime)
 }
 
+// DeleteStringValue removes the stored scalar so subsequent reads fall back to
+// the declared default (or report not-found). Used by the gateway's DELETE path.
+func (r *HandlerAdapter) DeleteStringValue(ctx context.Context, variableKey string, hubName string, correlationId string, recursionDepth int) error {
+	variableUpdateCommand := r.valkeyAdapter.DeleteString(variableKey, hubName)
+
+	auditEntry := makeAuditEntry(variableKey, "", correlationId, "Delete string value")
+	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
+
+	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
+		return err
+	}
+	return retryWithBackoff(ctx, func() error {
+		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
+			Hub:            hubName,
+			VarName:        variableKey,
+			VarType:        variables.DataTypeString,
+			Action:         actionRemove,
+			Data:           "",
+			CorrelationID:  correlationId,
+			Source:         source,
+			RecursionDepth: recursionDepth,
+		})
+	}, r.retryMaxTime)
+}
+
 func (r *HandlerAdapter) executeAuditedUpdateCommand(ctx context.Context, variableKey string, variableUpdateCommand valkey.Completed, auditLogCommand valkey.Completed) error {
 	results := r.client.DoMulti(
 		ctx,
