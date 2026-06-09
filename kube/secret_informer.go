@@ -111,7 +111,8 @@ func (sc *SecretController) GetSecretByNameAndNamespace(name, namespace string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
 	}
-	return secret, nil
+	// return a deep copy so consumers can't directly modify the pointer to the object in cache.
+	return secret.DeepCopy(), nil
 }
 
 // CreateSecret creates the provided secret in the provided namespace.
