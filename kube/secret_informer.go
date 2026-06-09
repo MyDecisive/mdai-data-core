@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -36,22 +37,25 @@ type SecretStore interface {
 	Stop()
 
 	GetSecretByNameAndNamespace(name, namespace string) (*v1.Secret, error)
+	CreateSecret(ctx context.Context, namespace string, secret *v1.Secret) error
+	UpdateSecret(ctx context.Context, namespace string, secret *v1.Secret) error
 }
 
 type SecretController struct {
-	InformerFactory informers.SharedInformerFactory
-	SecretInformer  cache.SharedIndexInformer
-	SecretLister    corev1.SecretLister
+	informerFactory informers.SharedInformerFactory
+	secretInformer  cache.SharedIndexInformer
+	secretLister    corev1.SecretLister
+	secretWriter    kubernetes.Interface
 	namespace       string
-	Logger          *zap.Logger
+	logger          *zap.Logger
 	stopCh          chan struct{}
 }
 
 func (sc *SecretController) Run() error {
 	sc.stopCh = make(chan struct{})
 
-	sc.InformerFactory.Start(sc.stopCh)
-	if !cache.WaitForCacheSync(sc.stopCh, sc.SecretInformer.HasSynced) {
+	sc.informerFactory.Start(sc.stopCh)
+	if !cache.WaitForCacheSync(sc.stopCh, sc.secretInformer.HasSynced) {
 		return errors.New("failed to populate Secret cache")
 	}
 	return nil
@@ -83,10 +87,11 @@ func NewSecretController(secretTypes []string, namespace string, clientset kuber
 
 	sc := &SecretController{
 		namespace:       namespace,
-		InformerFactory: informerFactory,
-		SecretInformer:  informerFactory.Core().V1().Secrets().Informer(),
-		SecretLister:    informerFactory.Core().V1().Secrets().Lister(),
-		Logger:          logger,
+		informerFactory: informerFactory,
+		secretInformer:  informerFactory.Core().V1().Secrets().Informer(),
+		secretLister:    informerFactory.Core().V1().Secrets().Lister(),
+		logger:          logger,
+		secretWriter:    clientset,
 	}
 
 	return sc, nil
@@ -102,9 +107,25 @@ func buildSecretLabelSelector(secretTypes []string) (string, error) {
 
 // GetSecretByNameAndNamespace returns the requested secret, if it exists.
 func (sc *SecretController) GetSecretByNameAndNamespace(name, namespace string) (*v1.Secret, error) {
-	secret, err := sc.SecretLister.Secrets(namespace).Get(name)
+	secret, err := sc.secretLister.Secrets(namespace).Get(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
 	}
 	return secret, nil
+}
+
+// CreateSecret creates the provided secret in the provided namespace.
+func (sc *SecretController) CreateSecret(ctx context.Context, namespace string, secret *v1.Secret) error {
+	if _, err := sc.secretWriter.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create secret %s: %w", secret.Name, err)
+	}
+	return nil
+}
+
+// UpdateSecret updates an existing secret with the provided secret in the provided namespace.
+func (sc *SecretController) UpdateSecret(ctx context.Context, namespace string, secret *v1.Secret) error {
+	if _, err := sc.secretWriter.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("error while updating secret: %w", err)
+	}
+	return nil
 }

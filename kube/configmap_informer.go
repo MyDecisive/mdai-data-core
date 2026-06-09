@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -24,13 +25,16 @@ type ConfigMapStore interface {
 	Stop()
 
 	GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error)
+	CreateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error
+	UpdateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error
 }
 
 type ConfigMapController struct {
-	InformerFactory informers.SharedInformerFactory
-	CmInformer      cache.SharedIndexInformer
-	CmLister        corev1.ConfigMapLister
-	Logger          *zap.Logger
+	informerFactory informers.SharedInformerFactory
+	cmInformer      cache.SharedIndexInformer
+	cmLister        corev1.ConfigMapLister
+	cmWriter        kubernetes.Interface
+	logger          *zap.Logger
 	stopCh          chan struct{}
 }
 
@@ -39,8 +43,8 @@ var _ ConfigMapStore = &ConfigMapController{}
 func (cmc *ConfigMapController) Run() error {
 	cmc.stopCh = make(chan struct{})
 
-	cmc.InformerFactory.Start(cmc.stopCh)
-	if !cache.WaitForCacheSync(cmc.stopCh, cmc.CmInformer.HasSynced) {
+	cmc.informerFactory.Start(cmc.stopCh)
+	if !cache.WaitForCacheSync(cmc.stopCh, cmc.cmInformer.HasSynced) {
 		return errConfigMapCache
 	}
 	return nil
@@ -71,10 +75,11 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 	)
 
 	c := &ConfigMapController{
-		InformerFactory: informerFactory,
-		CmInformer:      informerFactory.Core().V1().ConfigMaps().Informer(),
-		CmLister:        informerFactory.Core().V1().ConfigMaps().Lister(),
-		Logger:          logger,
+		informerFactory: informerFactory,
+		cmInformer:      informerFactory.Core().V1().ConfigMaps().Informer(),
+		cmLister:        informerFactory.Core().V1().ConfigMaps().Lister(),
+		logger:          logger,
+		cmWriter:        clientset,
 	}
 
 	return c, nil
@@ -82,9 +87,25 @@ func NewConfigMapController(configMapTypes []string, namespace string, clientset
 
 // GetConfigmapByNameAndNamespace returns the requested configmap, if it exists.
 func (cmc *ConfigMapController) GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error) {
-	cm, err := cmc.CmLister.ConfigMaps(namespace).Get(name)
+	cm, err := cmc.cmLister.ConfigMaps(namespace).Get(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, err)
 	}
 	return cm, nil
+}
+
+// CreateConfigMap creates the provided configmap in the provided namespace.
+func (cmc *ConfigMapController) CreateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error {
+	if _, err := cmc.cmWriter.CoreV1().ConfigMaps(namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create configmap %s: %w", cm.Name, err)
+	}
+	return nil
+}
+
+// UpdateConfigMap updates an existing configmap with the provided configmap in the provided namespace.
+func (cmc *ConfigMapController) UpdateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error {
+	if _, err := cmc.cmWriter.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("error while updating configmap: %w", err)
+	}
+	return nil
 }

@@ -5,6 +5,8 @@
 package kubemock
 
 import (
+	"context"
+
 	mock "github.com/stretchr/testify/mock"
 	"k8s.io/api/core/v1"
 )
@@ -34,6 +36,69 @@ type MockConfigMapStore_Expecter struct {
 
 func (_m *MockConfigMapStore) EXPECT() *MockConfigMapStore_Expecter {
 	return &MockConfigMapStore_Expecter{mock: &_m.Mock}
+}
+
+// CreateConfigMap provides a mock function for the type MockConfigMapStore
+func (_mock *MockConfigMapStore) CreateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error {
+	ret := _mock.Called(ctx, namespace, cm)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateConfigMap")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *v1.ConfigMap) error); ok {
+		r0 = returnFunc(ctx, namespace, cm)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockConfigMapStore_CreateConfigMap_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateConfigMap'
+type MockConfigMapStore_CreateConfigMap_Call struct {
+	*mock.Call
+}
+
+// CreateConfigMap is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - cm *v1.ConfigMap
+func (_e *MockConfigMapStore_Expecter) CreateConfigMap(ctx interface{}, namespace interface{}, cm interface{}) *MockConfigMapStore_CreateConfigMap_Call {
+	return &MockConfigMapStore_CreateConfigMap_Call{Call: _e.mock.On("CreateConfigMap", ctx, namespace, cm)}
+}
+
+func (_c *MockConfigMapStore_CreateConfigMap_Call) Run(run func(ctx context.Context, namespace string, cm *v1.ConfigMap)) *MockConfigMapStore_CreateConfigMap_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *v1.ConfigMap
+		if args[2] != nil {
+			arg2 = args[2].(*v1.ConfigMap)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockConfigMapStore_CreateConfigMap_Call) Return(err error) *MockConfigMapStore_CreateConfigMap_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockConfigMapStore_CreateConfigMap_Call) RunAndReturn(run func(ctx context.Context, namespace string, cm *v1.ConfigMap) error) *MockConfigMapStore_CreateConfigMap_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // GetConfigmapByNameAndNamespace provides a mock function for the type MockConfigMapStore
@@ -181,6 +246,69 @@ func (_c *MockConfigMapStore_Stop_Call) RunAndReturn(run func()) *MockConfigMapS
 	return _c
 }
 
+// UpdateConfigMap provides a mock function for the type MockConfigMapStore
+func (_mock *MockConfigMapStore) UpdateConfigMap(ctx context.Context, namespace string, cm *v1.ConfigMap) error {
+	ret := _mock.Called(ctx, namespace, cm)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateConfigMap")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *v1.ConfigMap) error); ok {
+		r0 = returnFunc(ctx, namespace, cm)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockConfigMapStore_UpdateConfigMap_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateConfigMap'
+type MockConfigMapStore_UpdateConfigMap_Call struct {
+	*mock.Call
+}
+
+// UpdateConfigMap is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - cm *v1.ConfigMap
+func (_e *MockConfigMapStore_Expecter) UpdateConfigMap(ctx interface{}, namespace interface{}, cm interface{}) *MockConfigMapStore_UpdateConfigMap_Call {
+	return &MockConfigMapStore_UpdateConfigMap_Call{Call: _e.mock.On("UpdateConfigMap", ctx, namespace, cm)}
+}
+
+func (_c *MockConfigMapStore_UpdateConfigMap_Call) Run(run func(ctx context.Context, namespace string, cm *v1.ConfigMap)) *MockConfigMapStore_UpdateConfigMap_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *v1.ConfigMap
+		if args[2] != nil {
+			arg2 = args[2].(*v1.ConfigMap)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockConfigMapStore_UpdateConfigMap_Call) Return(err error) *MockConfigMapStore_UpdateConfigMap_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockConfigMapStore_UpdateConfigMap_Call) RunAndReturn(run func(ctx context.Context, namespace string, cm *v1.ConfigMap) error) *MockConfigMapStore_UpdateConfigMap_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // NewMockSecretStore creates a new instance of MockSecretStore. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockSecretStore(t interface {
@@ -206,6 +334,69 @@ type MockSecretStore_Expecter struct {
 
 func (_m *MockSecretStore) EXPECT() *MockSecretStore_Expecter {
 	return &MockSecretStore_Expecter{mock: &_m.Mock}
+}
+
+// CreateSecret provides a mock function for the type MockSecretStore
+func (_mock *MockSecretStore) CreateSecret(ctx context.Context, namespace string, secret *v1.Secret) error {
+	ret := _mock.Called(ctx, namespace, secret)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateSecret")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *v1.Secret) error); ok {
+		r0 = returnFunc(ctx, namespace, secret)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSecretStore_CreateSecret_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateSecret'
+type MockSecretStore_CreateSecret_Call struct {
+	*mock.Call
+}
+
+// CreateSecret is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - secret *v1.Secret
+func (_e *MockSecretStore_Expecter) CreateSecret(ctx interface{}, namespace interface{}, secret interface{}) *MockSecretStore_CreateSecret_Call {
+	return &MockSecretStore_CreateSecret_Call{Call: _e.mock.On("CreateSecret", ctx, namespace, secret)}
+}
+
+func (_c *MockSecretStore_CreateSecret_Call) Run(run func(ctx context.Context, namespace string, secret *v1.Secret)) *MockSecretStore_CreateSecret_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *v1.Secret
+		if args[2] != nil {
+			arg2 = args[2].(*v1.Secret)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSecretStore_CreateSecret_Call) Return(err error) *MockSecretStore_CreateSecret_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSecretStore_CreateSecret_Call) RunAndReturn(run func(ctx context.Context, namespace string, secret *v1.Secret) error) *MockSecretStore_CreateSecret_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // GetSecretByNameAndNamespace provides a mock function for the type MockSecretStore
@@ -350,5 +541,68 @@ func (_c *MockSecretStore_Stop_Call) Return() *MockSecretStore_Stop_Call {
 
 func (_c *MockSecretStore_Stop_Call) RunAndReturn(run func()) *MockSecretStore_Stop_Call {
 	_c.Run(run)
+	return _c
+}
+
+// UpdateSecret provides a mock function for the type MockSecretStore
+func (_mock *MockSecretStore) UpdateSecret(ctx context.Context, namespace string, secret *v1.Secret) error {
+	ret := _mock.Called(ctx, namespace, secret)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateSecret")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *v1.Secret) error); ok {
+		r0 = returnFunc(ctx, namespace, secret)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSecretStore_UpdateSecret_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateSecret'
+type MockSecretStore_UpdateSecret_Call struct {
+	*mock.Call
+}
+
+// UpdateSecret is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - secret *v1.Secret
+func (_e *MockSecretStore_Expecter) UpdateSecret(ctx interface{}, namespace interface{}, secret interface{}) *MockSecretStore_UpdateSecret_Call {
+	return &MockSecretStore_UpdateSecret_Call{Call: _e.mock.On("UpdateSecret", ctx, namespace, secret)}
+}
+
+func (_c *MockSecretStore_UpdateSecret_Call) Run(run func(ctx context.Context, namespace string, secret *v1.Secret)) *MockSecretStore_UpdateSecret_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *v1.Secret
+		if args[2] != nil {
+			arg2 = args[2].(*v1.Secret)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSecretStore_UpdateSecret_Call) Return(err error) *MockSecretStore_UpdateSecret_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSecretStore_UpdateSecret_Call) RunAndReturn(run func(ctx context.Context, namespace string, secret *v1.Secret) error) *MockSecretStore_UpdateSecret_Call {
+	_c.Call.Return(run)
 	return _c
 }
