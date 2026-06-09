@@ -142,16 +142,16 @@ func TestDeleteStringValue(t *testing.T) {
 	)
 	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, event eventing.MdaiEvent, subject eventing.MdaiEventSubject) error {
-			assert.Equal(t, "var.remove", event.Name)
+			assert.Equal(t, "var.removed", event.Name)
 			assert.Equal(t, hubName, event.HubName)
 			assert.Equal(t, correlationId, event.CorrelationID)
-			assert.Equal(t, fmt.Sprintf("trigger.vars.remove.%s.%s", hubName, variableKey), subject.String())
+			assert.Equal(t, fmt.Sprintf("trigger.vars.removed.%s.%s", hubName, variableKey), subject.String())
 
 			var payload eventing.VariablesActionPayload
 			require.NoError(t, json.Unmarshal([]byte(event.Payload), &payload))
 			assert.Equal(t, variableKey, payload.VariableRef)
 			assert.Equal(t, "string", payload.DataType)
-			assert.Equal(t, "remove", payload.Operation)
+			assert.Equal(t, "removed", payload.Operation)
 			assert.Empty(t, payload.Data)
 			return nil
 		})
@@ -338,12 +338,12 @@ func TestRemoveMapEntry_BehaviorAndPayload(t *testing.T) {
 
 	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, ev eventing.MdaiEvent, subj eventing.MdaiEventSubject) error {
-			assert.Equal(t, "var.remove", ev.Name)
-			assert.Equal(t, fmt.Sprintf("trigger.vars.remove.%s.%s", hub, key), subj.String())
+			assert.Equal(t, "var.removed", ev.Name)
+			assert.Equal(t, fmt.Sprintf("trigger.vars.removed.%s.%s", hub, key), subj.String())
 			var pl eventing.VariablesActionPayload
 			require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
 			assert.Equal(t, "map", pl.DataType)
-			assert.Equal(t, "remove", pl.Operation)
+			assert.Equal(t, "removed", pl.Operation)
 			// current implementation passes 'field'
 			assert.Equal(t, field, pl.Data)
 			return nil

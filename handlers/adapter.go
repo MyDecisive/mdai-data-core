@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	source       = "eventhub"
-	actionAdded  = "added"
-	actionSet    = "set"
-	actionRemove = "remove"
+	source        = "eventhub"
+	actionAdded   = "added"
+	actionSet     = "set"
+	actionRemoved = "removed"
 )
 
 // HandlerAdapter is a wrapper for handling variable operations.
@@ -98,7 +98,7 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 			Hub:            hubName,
 			VarName:        variableKey,
 			VarType:        variables.DataTypeSet,
-			Action:         actionRemove,
+			Action:         actionRemoved,
 			Data:           value,
 			CorrelationID:  correlationId,
 			Source:         source,
@@ -150,7 +150,7 @@ func (r *HandlerAdapter) RemoveMapEntry(ctx context.Context, variableKey string,
 			Hub:            hubName,
 			VarName:        variableKey,
 			VarType:        variables.DataTypeMap,
-			Action:         actionRemove,
+			Action:         actionRemoved,
 			Data:           field,
 			CorrelationID:  correlationId,
 			Source:         source,
@@ -199,7 +199,7 @@ func (r *HandlerAdapter) DeleteStringValue(ctx context.Context, variableKey stri
 			Hub:            hubName,
 			VarName:        variableKey,
 			VarType:        variables.DataTypeString,
-			Action:         actionRemove,
+			Action:         actionRemoved,
 			Data:           "",
 			CorrelationID:  correlationId,
 			Source:         source,
