@@ -91,7 +91,8 @@ func (cmc *ConfigMapController) GetConfigmapByNameAndNamespace(name, namespace s
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, err)
 	}
-	return cm, nil
+	// return a deep copy so consumers can't directly modify the pointer to the object in cache.
+	return cm.DeepCopy(), nil
 }
 
 // CreateConfigMap creates the provided configmap in the provided namespace.
