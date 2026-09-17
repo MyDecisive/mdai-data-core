@@ -101,9 +101,18 @@ func TestElasticGroupDelivery(t *testing.T) {
 		})
 	}
 
-	time.Sleep(2 * time.Second)
+	var gotSnapshot map[string]int
+	assertion.Eventually(func() bool {
+		mu.Lock()
+		gotSnapshot = make(map[string]int, len(got))
+		for k, v := range got {
+			gotSnapshot[k] = v
+		}
+		mu.Unlock()
 
-	assertion.Equal(want, got, "all eventing delivered exactly once")
+		return assert.ObjectsAreEqual(want, gotSnapshot)
+	}, 10*time.Second, 100*time.Millisecond)
+	assertion.Equal(want, gotSnapshot, "all eventing delivered exactly once")
 }
 
 // TestPartitionKeyConsistency verifies that messages with the same key
@@ -128,6 +137,15 @@ func TestPartitionKeyConsistency(t *testing.T) {
 		seq []string
 		mu  sync.Mutex
 	}
+	snapshot := func(r *recorder) []string {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+
+		out := make([]string, len(r.seq))
+		copy(out, r.seq)
+		return out
+	}
+
 	r1 := &recorder{}
 	handler1 := func(ev eventing.MdaiEvent) error {
 		r1.mu.Lock()
@@ -161,20 +179,25 @@ func TestPartitionKeyConsistency(t *testing.T) {
 		}
 	}
 
-	time.Sleep(2 * time.Second)
+	wantTotal := count * len(events)
+	var r1Seq, r2Seq []string
+	assert.Eventually(t, func() bool {
+		r1Seq = snapshot(r1)
+		r2Seq = snapshot(r2)
+		return len(r1Seq)+len(r2Seq) == wantTotal
+	}, 10*time.Second, 100*time.Millisecond)
 
 	// Verify total messages delivered equals published count
-	gotTotal := len(r1.seq) + len(r2.seq)
-	wantTotal := count * len(events)
+	gotTotal := len(r1Seq) + len(r2Seq)
 	assert.Equal(t, wantTotal, gotTotal, "total delivered messages should match published count")
 
 	// Determine assignment of keys to members and ensure consistency
 	set1 := make(map[string]struct{})
-	for _, name := range r1.seq {
+	for _, name := range r1Seq {
 		set1[name] = struct{}{}
 	}
 	set2 := make(map[string]struct{})
-	for _, name := range r2.seq {
+	for _, name := range r2Seq {
 		set2[name] = struct{}{}
 	}
 

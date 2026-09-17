@@ -23,12 +23,14 @@ const (
 	SecretTypeLabel              = "mydecisive.ai/secret-type"
 	OctantIntegrationDatadogType = "octant-integration-datadog"
 	OctantIntegrationArgoType    = "octant-integration-argo"
+	OctantIntegrationGitHubApp   = "octant-integration-github-app"
 )
 
 var (
 	supportedSecretTypes = []string{
 		OctantIntegrationArgoType,
 		OctantIntegrationDatadogType,
+		OctantIntegrationGitHubApp,
 	}
 )
 
