@@ -3,7 +3,9 @@
 # mdai-data-core
 
 ## Overview
-`mdai-data-core` is a Go library designed for efficient and structured interaction with Valkey storage.   
+`mdai-data-core` is a Go library shared by MDAI services. It provides Valkey variable storage, auditing, NATS/JetStream eventing, Kubernetes informers, and OpAMP helpers.
+
+Contributor and agent guidance (commands, invariants, testing rules) lives in [AGENTS.md](AGENTS.md).
 
 It simplifies:
 -	**Variable Access**: Conveniently encapsulates and manages variables stored in Valkey.
@@ -29,9 +31,9 @@ import (
 
 func main() {
 	// initialize your valkeyClient (valkey-go), provide logger
-	client := datacore .NewValkeyAdapter(valKeyClient, zapLogger)
+	client := datacore.NewValkeyAdapter(valKeyClient, zapLogger)
 	value, found, err := client.GetString(context.TODO(), "your_variable_name", "hub_name")
-	// proceed with error hadling and the rest of your logic
+	// proceed with error handling and the rest of your logic
 }
 ```
 ## To Generate Mocks
