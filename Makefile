@@ -12,7 +12,7 @@ test-race: tidy vendor
 tidy:
 	@$(GO) mod tidy
 
-tidy-check: tidy
+tidy-check:
 	@$(GO) mod tidy -diff
 
 vendor:
