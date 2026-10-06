@@ -39,8 +39,6 @@ The module path is `github.com/mydecisive/mdai-data-core`. This is a library, no
 
 The module declares `go 1.25.0`. The Makefile defaults to `GOTOOLCHAIN=go1.25.0` and disables CGO. CI installs Go from `go-version-file: go.mod`, not from the Makefile's `GOTOOLCHAIN`.
 
-Some dependencies and CI tooling may resolve private `github.com/mydecisive/*` modules. CI sets `GOPRIVATE=github.com/mydecisive/*` and authenticates git with a token. Locally you need the same `GOPRIVATE` setting and git credentials that can read those repositories.
-
 `make generate` (and targets that depend on it, such as `make test`, `make cover`, and `make coverhtml`) needs network access to `go install` the pinned mock generators. `make tidy`, `make vendor`, and `make test-race` may also download modules. Plain `go test` against an already-populated module cache does not need the network.
 
 Prefer the smallest command that validates the change while iterating:
