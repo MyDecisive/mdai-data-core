@@ -10,18 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-env:
-  GOPRIVATE: github.com/mydecisive/*
-  TOKEN: ${{ secrets.TOKEN_OPERATOR }}
-
 jobs:
   lint:
     name: Lint on Ubuntu
     runs-on: ubuntu-latest
     steps:
-      - name: Configure git for private modules
-        run: git config --global url."https://user:${TOKEN}@github.com".insteadOf "https://github.com"
-
       - name: Clone the code
         uses: actions/checkout@v6
 
@@ -43,9 +36,6 @@ jobs:
     outputs:
       go_files_changed: ${{ steps.check.outputs.go_files_changed }}
     steps:
-      - name: Configure git for private modules
-        run: git config --global url."https://user:${TOKEN}@github.com".insteadOf "https://github.com"
-
       - name: Clone the code
         uses: actions/checkout@v6
         with:
@@ -99,9 +89,6 @@ jobs:
     needs: [lint, check-go-file-changes]
     if: needs.check-go-file-changes.outputs.go_files_changed == 'true'
     steps:
-      - name: Configure git for private modules
-        run: git config --global url."https://user:${TOKEN}@github.com".insteadOf "https://github.com"
-
       - name: Clone the code
         uses: actions/checkout@v6
 
