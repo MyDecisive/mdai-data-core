@@ -53,8 +53,11 @@ CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./eventing/config -run '^Tes
 # All packages without regenerating files
 CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./...
 
-# CI-equivalent test workflow (tidies, vendors, regenerates mocks, and writes coverage.out; needs network)
+# Full test workflow (tidies, vendors, and regenerates mocks; needs network)
 make test
+
+# CI-equivalent test workflow (same as make test, plus writes coverage.out)
+make cover
 
 # Race detector (runs tidy + vendor, but not generate)
 make test-race
@@ -69,7 +72,7 @@ golangci-lint fmt
 golangci-lint run
 ```
 
-`make test` is intentionally heavier than a direct `go test`: it may download pinned mock generators, run `go mod tidy`, refresh `vendor/`, regenerate mocks, and create `coverage.out`. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them. Afterwards, inspect `git diff` for unrelated churn in `go.mod`, `go.sum`, and the generated mock files, and do not include it.
+`make test` and `make cover` are intentionally heavier than a direct `go test`: they may download pinned mock generators, run `go mod tidy`, refresh `vendor/`, and regenerate mocks; `make cover` also creates `coverage.out`. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them. Afterwards, inspect `git diff` for unrelated churn in `go.mod`, `go.sum`, and the generated mock files, and do not include it.
 
 `.golangci.yml` uses the golangci-lint v2 config format. A v1.x binary will reject it or behave differently, so match CI's `v2.4.0` when possible.
 
