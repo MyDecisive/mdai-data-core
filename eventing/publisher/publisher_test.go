@@ -10,11 +10,14 @@ import (
 	"time"
 
 	"github.com/mydecisive/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing/config"
 	"github.com/mydecisive/mdai-data-core/eventing/subscriber"
 	"github.com/nats-io/nats-server/v2/server"
 	natsclient "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/synadia-io/orbit.go/pcgroups"
 	"go.uber.org/zap"
 )
 
@@ -101,8 +104,18 @@ func TestElasticGroupDelivery(t *testing.T) {
 		})
 	}
 
-	time.Sleep(2 * time.Second)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		total := 0
+		for _, n := range got {
+			total += n
+		}
+		return total >= 15
+	}, 10*time.Second, 20*time.Millisecond)
 
+	mu.Lock()
+	defer mu.Unlock()
 	assertion.Equal(want, got, "all eventing delivered exactly once")
 }
 
@@ -161,12 +174,23 @@ func TestPartitionKeyConsistency(t *testing.T) {
 		}
 	}
 
-	time.Sleep(2 * time.Second)
+	deliveredTotal := func() int {
+		r1.mu.Lock()
+		defer r1.mu.Unlock()
+		r2.mu.Lock()
+		defer r2.mu.Unlock()
+		return len(r1.seq) + len(r2.seq)
+	}
+	wantTotal := count * len(events)
+	require.Eventually(t, func() bool { return deliveredTotal() >= wantTotal }, 10*time.Second, 20*time.Millisecond)
 
 	// Verify total messages delivered equals published count
-	gotTotal := len(r1.seq) + len(r2.seq)
-	wantTotal := count * len(events)
-	assert.Equal(t, wantTotal, gotTotal, "total delivered messages should match published count")
+	assert.Equal(t, wantTotal, deliveredTotal(), "total delivered messages should match published count")
+
+	r1.mu.Lock()
+	defer r1.mu.Unlock()
+	r2.mu.Lock()
+	defer r2.mu.Unlock()
 
 	// Determine assignment of keys to members and ensure consistency
 	set1 := make(map[string]struct{})
@@ -247,14 +271,19 @@ func TestDuplicateSuppression(t *testing.T) {
 
 	var mu sync.Mutex
 	delivered := 0
+	sentinelSeen := false
 
 	// Subscriber records each delivery
 	sub, err := subscriber.NewSubscriber(context.Background(), logger, "test")
 	require.NoError(t, err)
 	err = sub.Subscribe(t.Context(), eventing.AlertConsumerGroupName.String(), "alerts", func(ev eventing.MdaiEvent) error {
 		mu.Lock()
+		defer mu.Unlock()
+		if ev.ID == "sentinel" {
+			sentinelSeen = true
+			return nil
+		}
 		delivered++
-		mu.Unlock()
 		return nil
 	})
 	require.NoError(t, err)
@@ -265,8 +294,14 @@ func TestDuplicateSuppression(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	mustPublish(t, pub, ev)
 
-	// Allow for delivery
-	time.Sleep(2 * time.Second)
+	// All events share one subject, so they land on one partition and are delivered in order:
+	// once the sentinel arrives, any stored duplicate would already have been delivered.
+	mustPublish(t, pub, eventing.MdaiEvent{ID: "sentinel", Name: "Sentinel", HubName: "hub", Source: "src", Payload: `{}`})
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return sentinelSeen
+	}, 10*time.Second, 20*time.Millisecond)
 
 	mu.Lock()
 	count := delivered
@@ -314,8 +349,6 @@ func TestSingleActiveMember(t *testing.T) {
 		require.NoError(t, sub.Close())
 	}
 
-	time.Sleep(3 * time.Second) // giving time for elastic group to setup up membership
-
 	// Single active subscriber
 	active := "member_11"
 	t.Setenv("POD_NAME", active)
@@ -341,7 +374,19 @@ func TestSingleActiveMember(t *testing.T) {
 		},
 	))
 
-	time.Sleep(3 * time.Second) // giving time for elastic group to setup up membership
+	// Wait until the active member is in the group and its consumer exists.
+	nc, err := natsclient.Connect(srv.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(nc.Close)
+	js, err := jetstream.New(nc)
+	require.NoError(t, err)
+	cfg, err := config.LoadConfig()
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		inMembership, isActive, err := pcgroups.ElasticIsInMembershipAndActive(
+			t.Context(), js, cfg.StreamName, eventing.AlertConsumerGroupName.String(), active)
+		return err == nil && inMembership && isActive
+	}, 30*time.Second, 50*time.Millisecond, "active member should join the elastic group")
 
 	// Publish events on two keys
 	keys := []string{"KeyA", "KeyB"}

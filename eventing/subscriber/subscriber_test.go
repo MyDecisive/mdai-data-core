@@ -80,8 +80,7 @@ func TestSubscriber_SubscribeValidationErrors(t *testing.T) {
 }
 
 func TestSubscriber_SubscribeSuccessfully(t *testing.T) {
-	srv := runJetStream(t)
-	defer srv.Shutdown()
+	_ = runJetStream(t)
 
 	logger := zap.NewNop()
 
