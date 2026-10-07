@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 )
 
-//nolint:gocritic
 func runJetStream(t *testing.T) *server.Server {
 	t.Helper()
 	tempDir := t.TempDir()

@@ -29,7 +29,7 @@ const (
 // serviceName is the mdai service name of the service in the format "github.com/mydecisive/service-name"
 // internalLogger is for logging to stdout only, while appLogger is for logging through OTEL SDK.
 // Use LOG_LEVEL environment variable to change the log level.
-func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Logger, appLogger *zap.Logger, cleanup func()) { //nolint:nonamedreturns
+func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Logger, appLogger *zap.Logger, cleanup func()) {
 	// Define custom encoder configuration
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.TimeKey = "timestamp"                   // Rename the time field

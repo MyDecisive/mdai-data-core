@@ -37,29 +37,29 @@ The module path is `github.com/mydecisive/mdai-data-core`. This is a library, no
 
 ## Toolchain and common commands
 
-The module declares `go 1.25.0`. The Makefile defaults to `GOTOOLCHAIN=go1.25.0` and disables CGO. CI installs Go from `go-version-file: go.mod`, not from the Makefile's `GOTOOLCHAIN`.
+The module declares `go 1.25.0` (the minimum for downstream consumers) and `toolchain go1.25.14` (the version used to build and test this repository). The Makefile defaults to `GOTOOLCHAIN=go1.25.14` and disables CGO. CI installs Go from `go-version-file: go.mod`, which uses the `toolchain` directive; keep it and the Makefile's `GOTOOLCHAIN` in sync.
 
-`make generate` (and targets that depend on it, such as `make test`, `make cover`, and `make coverhtml`) needs network access to `go install` the pinned mock generators. `make tidy`, `make vendor`, and `make test-race` may also download modules. Plain `go test` against an already-populated module cache does not need the network.
+`make generate` and `make generate-check` need network access to `go install` the pinned mock generators; `make generate` puts the Go bin directory first on `PATH`, so the generators do not need to be on your `PATH`. `make tidy`, `make tidy-check`, and `make vendor` may also download modules. The test targets (`make test`, `make cover`, `make coverhtml`, `make test-race`) only run tests; they do not tidy, vendor, or regenerate. Plain `go test` against an already-populated module cache does not need the network.
 
 Prefer the smallest command that validates the change while iterating:
 
 ```sh
 # One package
-CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./variables
+CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go test -count=1 ./variables
 
 # One test
-CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./eventing/config -run '^TestLoadConfig$'
+CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go test -count=1 ./eventing/config -run '^TestLoadConfig$'
 
 # All packages without regenerating files
-CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./...
+CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go test -count=1 ./...
 
-# Full test workflow (tidies, vendors, and regenerates mocks; needs network)
+# All packages, verbose
 make test
 
-# CI-equivalent test workflow (same as make test, plus writes coverage.out)
-make cover
+# CI-equivalent workflow: fail on go.mod/go.sum drift or stale mocks, then test and write coverage.out
+make tidy-check generate-check cover
 
-# Race detector (runs tidy + vendor, but not generate)
+# Race detector
 make test-race
 
 # Generate mocks
@@ -68,13 +68,13 @@ make generate
 # Apply formatters used by CI (gofmt + goimports, per .golangci.yml)
 golangci-lint fmt
 
-# Lint exactly as CI does (requires golangci-lint v2; CI pins v2.4.0)
-golangci-lint run
+# Lint exactly as CI does (runs the pinned golangci-lint v2.4.0 under the repo's toolchain)
+make lint
 ```
 
-`make test` and `make cover` are intentionally heavier than a direct `go test`: they may download pinned mock generators, run `go mod tidy`, refresh `vendor/`, and regenerate mocks; `make cover` also creates `coverage.out`. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them. Afterwards, inspect `git diff` for unrelated churn in `go.mod`, `go.sum`, and the generated mock files, and do not include it.
+`make tidy-check` and `make generate-check` verify rather than fix: they fail if `go.mod`/`go.sum` are not tidy, or if the mocks in your working tree differ from what the pinned generators produce. Neither modifies your files: `make generate-check` generates into a temporary copy of the working tree and diffs the result. Run `make tidy` or `make generate` to fix, then review and commit the result. The test targets build with `-mod=readonly`, so a stale local `vendor/` directory is ignored. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them.
 
-`.golangci.yml` uses the golangci-lint v2 config format. A v1.x binary will reject it or behave differently, so match CI's `v2.4.0` when possible.
+`.golangci.yml` uses the golangci-lint v2 config format. A v1.x binary will reject it or behave differently, so match CI's `v2.4.0` (`make lint` does this for you). Newer versions report additional findings that CI does not.
 
 ## Coding conventions
 
@@ -116,8 +116,8 @@ Changes in these areas need extra care:
 - Keep tests deterministic. Use `t.Setenv` for environment configuration, `t.Context()` or bounded contexts for blocking work, Kubernetes fake clients/stores for informer behavior, and injected fakes/mocks for external dependencies.
 - Eventing tests may start embedded NATS servers and can take longer than pure unit tests. Always clean up connections and servers and use bounded readiness waits rather than arbitrary long sleeps.
 - Do not require a developer's Kubernetes cluster, Valkey instance, NATS deployment, credentials, or network access in tests.
-- Run the changed package first, then `go test -count=1 ./...`. Run `make test-race` when changing goroutines, informer callbacks, connection management, shared maps, or shutdown behavior. `make test-race` does not regenerate mocks, so run `make generate` first if an interface changed.
-- CI (`chores.yml`) runs on pushes to `main` and on PRs targeting `main`. A push to a feature branch with no open PR triggers nothing. Within a run, lint always runs, but tests run only when Go files, `go.mod`, or `go.sum` change. A docs-only PR passing CI does not mean the tests ran.
+- Run the changed package first, then `go test -count=1 ./...`. Run `make test-race` when changing goroutines, informer callbacks, connection management, shared maps, or shutdown behavior. No test target regenerates mocks, so run `make generate` first if an interface changed.
+- CI (`chores.yml`) runs on pushes to `main` and on PRs targeting `main`. A push to a feature branch with no open PR triggers nothing. Within a run, lint always runs, but the test job (`make tidy-check`, `make generate-check`, `make cover`) runs only when Go files, `go.mod`, `go.sum`, `testdata/` fixtures, the `Makefile`, `mock/mockery.yml`, `.golangci.yml`, or `chores.yml` change. A docs-only PR passing CI does not mean the tests ran.
 
 ## Generated files and dependencies
 
@@ -126,16 +126,16 @@ Changes in these areas need extra care:
 - `eventing/publisher/publisher.go` drives MockGen (pinned `v0.6.0`) for `internal/mocks/eventing/publisher/publisher.go`.
 - `make generate` installs the pinned generator versions from the Makefile before running `go generate ./...`.
 - After changing an interface represented by a generated mock, regenerate it and include both the source-interface change and generated output.
-- Keep `go.mod` and `go.sum` consistent. To check for drift without modifying files, run `CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go mod tidy -diff` (or `make tidy-check`). `vendor/` is gitignored: it is built locally and in CI by `make vendor` and is never committed. Use `go mod tidy` only when dependency changes require it, and review `go.mod`/`go.sum` diffs carefully.
+- Keep `go.mod` and `go.sum` consistent. To check for drift without modifying files, run `CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go mod tidy -diff` (or `make tidy-check`). `vendor/` is gitignored and never committed; nothing in the build or CI uses it, and `make vendor` remains only as an optional standalone target. Use `go mod tidy` only when dependency changes require it, and review `go.mod`/`go.sum` diffs carefully.
 
 ## Before handing off a change
 
 ```sh
 golangci-lint fmt                                                     # gofmt + goimports
-CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./<pkg>/...       # focused
+CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go test -count=1 ./<pkg>/...      # focused
 make generate                                                         # only if an interface changed
-CGO_ENABLED=0 GOTOOLCHAIN=go1.25.0 go test -count=1 ./...             # full suite
-golangci-lint run                                                     # v2; CI pins v2.4.0
+CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go test -count=1 ./...            # full suite
+make lint                                                             # same golangci-lint version as CI
 git status && git diff                                                # review
 ```
 
@@ -149,4 +149,4 @@ If a step could not run (for example, no network or no golangci-lint), say so ex
 
 Preserve backward compatibility unless the task explicitly calls for a breaking change, and call out any intentional API, storage, configuration, or wire-format change.
 
-PR titles must follow the semantic PR title format, enforced by `.github/workflows/pr-title.yaml`. That workflow delegates to `MyDecisive/changelogs/.github/workflows/reusable-semantic-pr-title.yaml@main`, which lives outside this repository and can change without any change here. As of 2026-10-05 the allowed types are `build`, `chore`, `doc`, `feat`, `fix`, `perf`, `refactor`, `revert`, `security`, `style`, and `test`. A scope is optional, and the type is `doc:`, not `docs:`. If a title is rejected, check the reusable workflow for the current list.
+PR titles must follow the semantic PR title format, enforced by `.github/workflows/pr-title.yaml`. That workflow delegates to `MyDecisive/changelogs/.github/workflows/reusable-semantic-pr-title.yaml`, pinned to a commit SHA. It lives outside this repository; bump the pin deliberately to pick up changes there. As of 2026-10-05 the allowed types are `build`, `chore`, `doc`, `feat`, `fix`, `perf`, `refactor`, `revert`, `security`, `style`, and `test`. A scope is optional, and the type is `doc:`, not `docs:`. If a title is rejected, check the reusable workflow for the current list.

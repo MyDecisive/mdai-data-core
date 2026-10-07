@@ -526,7 +526,6 @@ func TestGetAllSubjectStringsWithAdditionalSuffixes(t *testing.T) {
 	}
 }
 
-//nolint:gocritic
 func runJetStream(t *testing.T) *server.Server {
 	t.Helper()
 	tempDir := t.TempDir()

@@ -10,24 +10,27 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint on Ubuntu
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           install-mode: "binary"
-          version: v2.4.0
+          version: v2.4.0 # Keep in sync with GOLANGCI_LINT_VERSION in the Makefile.
 
   check-go-file-changes:
     name: Check if Go files changed
@@ -37,51 +40,44 @@ jobs:
       go_files_changed: ${{ steps.check.outputs.go_files_changed }}
     steps:
       - name: Clone the code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0 # Fetch full history to compare commits
 
       - name: Determine base commit
         id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE_COMMIT="${{ github.event.pull_request.base.sha }}"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE_COMMIT="$PR_BASE_SHA"
+          elif [[ -n "$PUSH_BEFORE_SHA" && "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            BASE_COMMIT="$PUSH_BEFORE_SHA"  # Tip of main before this push, so multi-commit pushes are fully covered
           else
-            BASE_COMMIT=$(git rev-parse HEAD~1)  # Previous commit on main
+            BASE_COMMIT=$(git rev-parse HEAD~1)
           fi
           echo "BASE_COMMIT=$BASE_COMMIT"
           echo "BASE_COMMIT=$BASE_COMMIT" >> "$GITHUB_ENV"
 
-      - name: Check for Go-related file changes
+      - name: Check for test-relevant file changes
         id: check
         run: |
-          # Fetch latest main branch
-          git fetch origin main
-
-          # Find changed Go files (excluding _test.go and vendor/)
-          CHANGED_FILES=$(git diff --name-only "$BASE_COMMIT" HEAD -- '**/*.go' 'go.mod' 'go.sum' '*.go' | grep -vE '^vendor/' || true)
-
-          # Define output file path
-          OUTPUT_FILE=".github/outputs/all_changed_files.json"
-          mkdir -p .github/outputs  # Ensure the directory exists
+          # Go sources (including tests), module files, test fixtures, and the build/lint/mock/CI config the tests depend on
+          CHANGED_FILES=$(git diff --name-only "$BASE_COMMIT" HEAD -- \
+            '*.go' 'go.mod' 'go.sum' '*/testdata/*' \
+            'Makefile' 'mock/mockery.yml' '.golangci.yml' '.github/workflows/chores.yml' \
+            | grep -vE '^vendor/' || true)
 
           if [[ -z "$CHANGED_FILES" ]]; then
-            echo "No relevant Go file changes detected."
+            echo "No test-relevant file changes detected."
             echo "go_files_changed=false" >> "$GITHUB_OUTPUT"
-            echo "[]" > "$OUTPUT_FILE"  # Save empty JSON array
           else
-            echo "Relevant Go file changes detected."
+            echo "Test-relevant file changes detected:"
+            echo "$CHANGED_FILES"
             echo "go_files_changed=true" >> "$GITHUB_OUTPUT"
-
-            # Convert to JSON format and save to file
-            echo "$CHANGED_FILES" | jq -R . | jq -s . > "$OUTPUT_FILE"
           fi
-
-      - name: Upload changed files record
-        uses: actions/upload-artifact@v6
-        with:
-          name: changed-files
-          path: .github/outputs/all_changed_files.json
 
   test:
     name: Test on Ubuntu
@@ -90,20 +86,26 @@ jobs:
     if: needs.check-go-file-changes.outputs.go_files_changed == 'true'
     steps:
       - name: Clone the code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
+      - name: Check go.mod and go.sum are tidy
+        run: make tidy-check
+
+      - name: Check generated mocks are up to date
+        run: make generate-check
+
       - name: Running Tests
-        run: |
-          make cover
+        run: make cover
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
-          fail_ci_if_error: true
+          # Secrets are unavailable to fork PRs; don't fail those runs on a missing token.
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
