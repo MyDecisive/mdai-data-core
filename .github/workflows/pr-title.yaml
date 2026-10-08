@@ -10,5 +10,10 @@ on:
 
 jobs:
   pr-title:
-    uses: MyDecisive/changelogs/.github/workflows/reusable-semantic-pr-title.yaml@main
-    secrets: inherit # pass all secrets
+    # Pinned to MyDecisive/changelogs main as of 2026-06-01; bump deliberately to pick up changes.
+    uses: MyDecisive/changelogs/.github/workflows/reusable-semantic-pr-title.yaml@a95675bc66585f7ff75f842e099e7e67f4459bc8
+    # The reusable workflow only needs GITHUB_TOKEN (always available), so no other secrets are passed.
+    # These are the permissions it declares: commenting on the PR and setting the title status.
+    permissions:
+      pull-requests: write
+      statuses: write

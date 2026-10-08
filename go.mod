@@ -2,6 +2,8 @@ module github.com/mydecisive/mdai-data-core
 
 go 1.25.0
 
+toolchain go1.25.14
+
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/deckarep/golang-set/v2 v2.8.0

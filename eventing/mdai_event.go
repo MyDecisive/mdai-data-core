@@ -144,8 +144,6 @@ func (mdaiEvent *MdaiEvent) Validate() error {
 }
 
 // VariablesActionPayload represents a payload for static variables actions.
-//
-//nolint:tagliatelle
 type VariablesActionPayload struct {
 	VariableRef string `json:"variableRef"`
 	DataType    string `json:"dataType"`

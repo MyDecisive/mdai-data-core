@@ -20,7 +20,7 @@ type settings struct {
 
 func WithDialer(d Dialer) Option { return func(s *settings) { s.dialer = d } }
 
-func Init(ctx context.Context, logger *zap.Logger, cfg Config, opts ...Option) (valkey.Client, error) { //nolint:ireturn
+func Init(ctx context.Context, logger *zap.Logger, cfg Config, opts ...Option) (valkey.Client, error) {
 	s := settings{
 		dialer: valkey.NewClient, // production default
 	}

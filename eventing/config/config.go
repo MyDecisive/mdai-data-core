@@ -166,7 +166,6 @@ func SafeToken(s string) string {
 	return strings.NewReplacer(".", "_", " ", "_").Replace(s)
 }
 
-//nolint:ireturn
 func Connect(ctx context.Context, cfg Config) (*nats.Conn, jetstream.JetStream, error) {
 	natsOpts := []nats.Option{
 		nats.UserInfo("mdai", cfg.NatsPassword),
