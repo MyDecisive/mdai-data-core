@@ -237,7 +237,7 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
-	adapter.retryMaxTime = 300 * time.Millisecond
+	adapter.retryMaxTime = time.Second // room for three attempts
 
 	client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).Return(
 		[]valkey.ValkeyResult{
@@ -247,10 +247,15 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 	)
 
 	callCount := 0
-	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
-		DoAndReturn(func(context.Context, eventing.MdaiEvent, eventing.MdaiEventSubject) error {
+	var eventIDs []string
+	// Each attempt gets a context derived from ctx and bounded by retryMaxTime, so match any context.
+	pub.EXPECT().Publish(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(attemptCtx context.Context, ev eventing.MdaiEvent, _ eventing.MdaiEventSubject) error {
+			_, hasDeadline := attemptCtx.Deadline()
+			assert.True(t, hasDeadline, "each attempt should be bounded by retryMaxTime")
+			eventIDs = append(eventIDs, ev.ID)
 			callCount++
-			if callCount < 2 {
+			if callCount < 3 {
 				return errors.New("transient publish")
 			}
 			return nil
@@ -261,7 +266,12 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, callCount, 2)
+	assert.Equal(t, 3, callCount)
+	// The event is built once, so JetStream can deduplicate retries by Nats-Msg-Id.
+	require.Len(t, eventIDs, 3)
+	assert.NotEmpty(t, eventIDs[0])
+	assert.Equal(t, eventIDs[0], eventIDs[1], "retries must reuse the event ID")
+	assert.Equal(t, eventIDs[0], eventIDs[2], "retries must reuse the event ID")
 	// sanity: shouldn't take longer than the retryMaxTime by much
 	assert.Less(t, elapsed, 2*adapter.retryMaxTime)
 }
@@ -380,7 +390,7 @@ func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
 	failures := 2
 	calls := 0
 
-	err := retryWithBackoff(ctx, func() error {
+	err := retryWithBackoff(ctx, func(context.Context) error {
 		calls++
 		if calls <= failures {
 			return errors.New("not yet")
@@ -395,7 +405,7 @@ func TestRetryWithBackoff_SucceedsAfterRetries(t *testing.T) {
 func TestRetryWithBackoff_NoRetryWhenMaxZero(t *testing.T) {
 	ctx := t.Context()
 	calls := 0
-	err := retryWithBackoff(ctx, func() error {
+	err := retryWithBackoff(ctx, func(context.Context) error {
 		calls++
 		return errors.New("always")
 	}, 0)
@@ -408,7 +418,7 @@ func TestRetryWithBackoff_TimesOut(t *testing.T) {
 	ctx := t.Context()
 	start := time.Now()
 
-	err := retryWithBackoff(ctx, func() error {
+	err := retryWithBackoff(ctx, func(context.Context) error {
 		return errors.New("still failing")
 	}, 120*time.Millisecond)
 
@@ -416,41 +426,17 @@ func TestRetryWithBackoff_TimesOut(t *testing.T) {
 	require.Error(t, err)
 	// should be roughly around the max window (allow jitter)
 	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond)
+	// The deadline error and the last attempt's error are both kept.
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Contains(t, err.Error(), "still failing")
 }
 
-func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
-	ctx := t.Context()
-	logger := zap.NewNop()
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	client := vmock.NewClient(ctrl)
-	pub := publisher.NewMockPublisher(ctrl)
-	adapter := NewHandlerAdapter(client, logger, pub)
-
+func TestBuildVarUpdate_BuildsEventAndSubject(t *testing.T) {
 	hub, varName, action, data, corr := "hub-z", "var:foo", "set", "abc", "c-9"
 	varType := variables.DataTypeString
 	recDepth := 7
 
-	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, ev eventing.MdaiEvent, subj eventing.MdaiEventSubject) error {
-			assert.Equal(t, "var.set", ev.Name)
-			assert.Equal(t, hub, ev.HubName)
-			assert.Equal(t, "eventhub", ev.Source)
-			assert.Equal(t, corr, ev.CorrelationID)
-			assert.Equal(t, recDepth, ev.RecursionDepth)
-			assert.Equal(t, fmt.Sprintf("trigger.vars.set.%s.%s", hub, varName), subj.String())
-
-			var pl eventing.VariablesActionPayload
-			require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
-			assert.Equal(t, varName, pl.VariableRef)
-			assert.Equal(t, string(varType), pl.DataType)
-			assert.Equal(t, action, pl.Operation)
-			assert.Equal(t, data, pl.Data)
-			return nil
-		})
-
-	err := adapter.publishVarUpdate(ctx, PublishVarUpdateParams{
+	ev, subj, err := buildVarUpdate(PublishVarUpdateParams{
 		Hub:            hub,
 		VarName:        varName,
 		VarType:        varType,
@@ -461,6 +447,22 @@ func TestPublishVarUpdate_BuildsEventAndSubject(t *testing.T) {
 		RecursionDepth: recDepth,
 	})
 	require.NoError(t, err)
+
+	assert.Equal(t, "var.set", ev.Name)
+	assert.Equal(t, hub, ev.HubName)
+	assert.Equal(t, "eventhub", ev.Source)
+	assert.Equal(t, corr, ev.CorrelationID)
+	assert.Equal(t, recDepth, ev.RecursionDepth)
+	assert.NotEmpty(t, ev.ID, "defaults should be applied once, at build time")
+	assert.False(t, ev.Timestamp.IsZero())
+	assert.Equal(t, fmt.Sprintf("trigger.vars.set.%s.%s", hub, varName), subj.String())
+
+	var pl eventing.VariablesActionPayload
+	require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
+	assert.Equal(t, varName, pl.VariableRef)
+	assert.Equal(t, string(varType), pl.DataType)
+	assert.Equal(t, action, pl.Operation)
+	assert.Equal(t, data, pl.Data)
 }
 
 func TestStoreVariableAction_ToSequence_FieldsPresent(t *testing.T) {
@@ -500,4 +502,129 @@ func TestStoreVariableAction_ToSequence_FieldsPresent(t *testing.T) {
 	assert.Equal(t, "corr", got["correlation_id"])
 	assert.Equal(t, strconv.Itoa(3), got["recursion_depth"])
 	assert.NotEmpty(t, got["timestamp"])
+}
+
+func TestMutation_SanitizesSubjectTokens(t *testing.T) {
+	ctx := t.Context()
+	hub, key, value, corr := "hub.x", "a.b *>c\fd", "v", "corr-s"
+
+	adapter, client, pub, ctrl := newAdapterWithMocks(t)
+	defer ctrl.Finish()
+	adapter.retryMaxTime = 0
+
+	client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).Return(
+		[]valkey.ValkeyResult{
+			vmock.Result(vmock.ValkeyString("OK")),
+			vmock.Result(vmock.ValkeyInt64(1)),
+		},
+	)
+	pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, ev eventing.MdaiEvent, subj eventing.MdaiEventSubject) error {
+			// Exactly three tokens after trigger.vars, so the subject matches the stream.
+			assert.Equal(t, "trigger.vars.set.hub_x.a_b___c_d", subj.String())
+			assert.Equal(t, hub, ev.HubName, "the event keeps the original hub name")
+
+			var pl eventing.VariablesActionPayload
+			require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
+			assert.Equal(t, key, pl.VariableRef, "the payload keeps the original variable name")
+			return nil
+		})
+
+	require.NoError(t, adapter.SetStringValue(ctx, key, hub, value, corr, 0))
+}
+
+func TestMutation_InvalidEventFailsBeforeValkey(t *testing.T) {
+	cases := []struct {
+		name, hub, key, wantErr string
+	}{
+		{name: "missing hub", hub: "", key: "my-var", wantErr: "hubName"},
+		{name: "missing variable", hub: "my-hub", key: "", wantErr: "variable name is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, _, _, ctrl := newAdapterWithMocks(t)
+			defer ctrl.Finish()
+			// No DoMulti or Publish expectations: gomock fails the test if either is called.
+
+			err := adapter.SetStringValue(t.Context(), tc.key, tc.hub, "v", "corr", 0)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestScalarValue_PublishesDataType(t *testing.T) {
+	for _, dataType := range []variables.DataType{
+		variables.DataTypeString, variables.DataTypeInt, variables.DataTypeFloat, variables.DataTypeBoolean,
+	} {
+		t.Run(string(dataType), func(t *testing.T) {
+			ctx := t.Context()
+			adapter, client, pub, ctrl := newAdapterWithMocks(t)
+			defer ctrl.Finish()
+			adapter.retryMaxTime = 0
+
+			client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).Return(
+				[]valkey.ValkeyResult{
+					vmock.Result(vmock.ValkeyString("OK")),
+					vmock.Result(vmock.ValkeyInt64(1)),
+				},
+			).Times(2)
+
+			var gotTypes []string
+			pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, ev eventing.MdaiEvent, _ eventing.MdaiEventSubject) error {
+					var pl eventing.VariablesActionPayload
+					require.NoError(t, json.Unmarshal([]byte(ev.Payload), &pl))
+					gotTypes = append(gotTypes, pl.Operation+":"+pl.DataType)
+					return nil
+				}).Times(2)
+
+			require.NoError(t, adapter.SetScalarValue(ctx, "my-var", "my-hub", dataType, "1", "corr", 0))
+			require.NoError(t, adapter.DeleteScalarValue(ctx, "my-var", "my-hub", dataType, "corr", 0))
+			assert.Equal(t, []string{"set:" + string(dataType), "removed:" + string(dataType)}, gotTypes)
+		})
+	}
+}
+
+func TestScalarValue_RejectsNonScalarTypes(t *testing.T) {
+	for _, dataType := range []variables.DataType{
+		variables.DataTypeSet, variables.DataTypeMap, variables.DataTypeMetaHashSet, variables.DataTypeMetaPriorityList, "bogus",
+	} {
+		t.Run(string(dataType), func(t *testing.T) {
+			adapter, _, _, ctrl := newAdapterWithMocks(t)
+			defer ctrl.Finish()
+			// No DoMulti or Publish expectations: nothing may be written or published.
+
+			err := adapter.SetScalarValue(t.Context(), "my-var", "my-hub", dataType, "1", "corr", 0)
+			require.ErrorIs(t, err, variables.ErrUnsupportedDataType)
+
+			err = adapter.DeleteScalarValue(t.Context(), "my-var", "my-hub", dataType, "corr", 0)
+			require.ErrorIs(t, err, variables.ErrUnsupportedDataType)
+		})
+	}
+}
+
+func TestRetryWithBackoff_BoundsEachAttempt(t *testing.T) {
+	start := time.Now()
+
+	// An attempt that never finishes on its own must still end when retryMaxTime passes.
+	err := retryWithBackoff(t.Context(), func(attemptCtx context.Context) error {
+		<-attemptCtx.Done()
+		return errors.New("publish blocked")
+	}, 150*time.Millisecond)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestRetryWithBackoff_CallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	err := retryWithBackoff(ctx, func(context.Context) error {
+		return errors.New("still failing")
+	}, 5*time.Second)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "still failing", "the last publish error should be kept")
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/mydecisive/mdai-data-core/audit"
 	"github.com/mydecisive/mdai-data-core/eventing"
+	"github.com/mydecisive/mdai-data-core/eventing/config"
 	"github.com/mydecisive/mdai-data-core/eventing/publisher"
 	"github.com/mydecisive/mdai-data-core/variables"
 	"github.com/valkey-io/valkey-go"
@@ -64,22 +65,16 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Add element to set")
 	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
-		return err
-	}
-
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeSet,
-			Action:         actionAdded,
-			Data:           value,
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
-	}, r.retryMaxTime)
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        variables.DataTypeSet,
+		Action:         actionAdded,
+		Data:           value,
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
 }
 
 // RemoveElementFromSet removes an element from a Set data type and logs an audit entry.
@@ -89,22 +84,16 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Remove element from set")
 	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
-		return err
-	}
-
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeSet,
-			Action:         actionRemoved,
-			Data:           value,
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
-	}, r.retryMaxTime)
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        variables.DataTypeSet,
+		Action:         actionRemoved,
+		Data:           value,
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
 }
 
 // SetMapEntry sets a field-value pair in a map data type and logs an audit entry.
@@ -117,21 +106,16 @@ func (r *HandlerAdapter) SetMapEntry(ctx context.Context, variableKey string, hu
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Set map entry")
 	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
-		return err
-	}
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeMap,
-			Action:         actionSet,
-			Data:           value,
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
-	}, r.retryMaxTime)
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        variables.DataTypeMap,
+		Action:         actionSet,
+		Data:           value,
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
 }
 
 // RemoveMapEntry removes a field from a map data type and logs an audit entry.
@@ -142,69 +126,116 @@ func (r *HandlerAdapter) RemoveMapEntry(ctx context.Context, variableKey string,
 	auditEntry := makeAuditEntry(variableKey, field, correlationId, "Remove element from set")
 	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
-		return err
-	}
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeMap,
-			Action:         actionRemoved,
-			Data:           field,
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
-	}, r.retryMaxTime)
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        variables.DataTypeMap,
+		Action:         actionRemoved,
+		Data:           field,
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
 }
 
 // SetStringValue sets a string value and logs an audit entry.
+// It is SetScalarValue with variables.DataTypeString.
 func (r *HandlerAdapter) SetStringValue(ctx context.Context, variableKey string, hubName string, value string, correlationId string, recursionDepth int) error {
-	variableUpdateCommand := r.valkeyAdapter.SetString(variableKey, hubName, value)
+	return r.SetScalarValue(ctx, variableKey, hubName, variables.DataTypeString, value, correlationId, recursionDepth)
+}
 
-	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Set string value")
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
-
-	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
+// SetScalarValue sets a scalar (string, int, float or boolean) value and logs an audit entry.
+// The published event carries dataType, so consumers can tell the scalar types apart.
+// value is stored as given; pass the canonical form for dataType (see variables.CanonicalizeScalar).
+// It returns an error wrapping variables.ErrUnsupportedDataType if dataType is not a scalar type.
+func (r *HandlerAdapter) SetScalarValue(ctx context.Context, variableKey string, hubName string, dataType variables.DataType, value string, correlationId string, recursionDepth int) error {
+	if err := requireScalar(dataType); err != nil {
 		return err
 	}
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeString,
-			Action:         actionSet,
-			Data:           value,
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
-	}, r.retryMaxTime)
+
+	variableUpdateCommand := r.valkeyAdapter.SetString(variableKey, hubName, value)
+
+	auditEntry := makeAuditEntry(variableKey, value, correlationId, fmt.Sprintf("Set %s value", dataType))
+	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
+
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        dataType,
+		Action:         actionSet,
+		Data:           value,
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
 }
 
 // DeleteStringValue removes the stored scalar so subsequent reads fall back to
 // the declared default (or report not-found). Used by the gateway's DELETE path.
+// It is DeleteScalarValue with variables.DataTypeString.
 func (r *HandlerAdapter) DeleteStringValue(ctx context.Context, variableKey string, hubName string, correlationId string, recursionDepth int) error {
+	return r.DeleteScalarValue(ctx, variableKey, hubName, variables.DataTypeString, correlationId, recursionDepth)
+}
+
+// DeleteScalarValue removes a stored scalar (string, int, float or boolean) so subsequent reads
+// fall back to the declared default (or report not-found), and logs an audit entry.
+// The published event carries dataType. It returns an error wrapping
+// variables.ErrUnsupportedDataType if dataType is not a scalar type.
+func (r *HandlerAdapter) DeleteScalarValue(ctx context.Context, variableKey string, hubName string, dataType variables.DataType, correlationId string, recursionDepth int) error {
+	if err := requireScalar(dataType); err != nil {
+		return err
+	}
+
 	variableUpdateCommand := r.valkeyAdapter.DeleteString(variableKey, hubName)
 
-	auditEntry := makeAuditEntry(variableKey, "", correlationId, "Delete string value")
+	auditEntry := makeAuditEntry(variableKey, "", correlationId, fmt.Sprintf("Delete %s value", dataType))
 	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
+
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+		Hub:            hubName,
+		VarName:        variableKey,
+		VarType:        dataType,
+		Action:         actionRemoved,
+		Data:           "",
+		CorrelationID:  correlationId,
+		Source:         source,
+		RecursionDepth: recursionDepth,
+	})
+}
+
+// requireScalar returns an error wrapping variables.ErrUnsupportedDataType unless dataType is a scalar type.
+func requireScalar(dataType variables.DataType) error {
+	switch dataType {
+	case variables.DataTypeString, variables.DataTypeInt, variables.DataTypeFloat, variables.DataTypeBoolean:
+		return nil
+	default:
+		return fmt.Errorf("%w: %q is not a scalar type", variables.ErrUnsupportedDataType, dataType)
+	}
+}
+
+// applyAndPublish runs the mutation workflow: it builds and validates the variable-update
+// event, sends the Valkey update and audit entry, then publishes the event with retries.
+// The event is built once, before Valkey is touched, so an invalid event fails without
+// side effects and every publish attempt carries the same event ID (sent as Nats-Msg-Id).
+// That lets JetStream deduplicate a retry of a publish the server had already stored.
+func (r *HandlerAdapter) applyAndPublish(
+	ctx context.Context,
+	variableKey string,
+	variableUpdateCommand valkey.Completed,
+	auditLogCommand valkey.Completed,
+	params PublishVarUpdateParams,
+) error {
+	event, subject, err := buildVarUpdate(params)
+	if err != nil {
+		return err
+	}
 
 	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
 		return err
 	}
-	return retryWithBackoff(ctx, func() error {
-		return r.publishVarUpdate(ctx, PublishVarUpdateParams{
-			Hub:            hubName,
-			VarName:        variableKey,
-			VarType:        variables.DataTypeString,
-			Action:         actionRemoved,
-			Data:           "",
-			CorrelationID:  correlationId,
-			Source:         source,
-			RecursionDepth: recursionDepth,
-		})
+
+	return retryWithBackoff(ctx, func(ctx context.Context) error {
+		return r.publisher.Publish(ctx, event, subject)
 	}, r.retryMaxTime)
 }
 
@@ -232,9 +263,12 @@ func (r *HandlerAdapter) accumulateErrors(results []valkey.ValkeyResult, key str
 	return nil
 }
 
-func retryWithBackoff(ctx context.Context, fn func() error, maxElapsed time.Duration) error {
+// retryWithBackoff calls fn until it succeeds or maxElapsed passes; a non-positive maxElapsed
+// means a single attempt. Each attempt gets a context bounded by maxElapsed. If it gives up,
+// the error wraps both the context error and the last error from fn.
+func retryWithBackoff(ctx context.Context, fn func(context.Context) error, maxElapsed time.Duration) error {
 	if maxElapsed <= 0 {
-		return fn()
+		return fn(ctx)
 	}
 
 	backOff := backoff.NewExponentialBackOff()
@@ -245,19 +279,20 @@ func retryWithBackoff(ctx context.Context, fn func() error, maxElapsed time.Dura
 	ctx, cancel := context.WithTimeout(ctx, maxElapsed)
 	defer cancel()
 
+	var lastErr error
 	operation := func() (bool, error) {
-		if err := fn(); err != nil {
-			select {
-			case <-ctx.Done():
-				return false, backoff.Permanent(ctx.Err())
-			default:
-			}
+		if err := fn(ctx); err != nil {
+			lastErr = err
 			return false, err
 		}
 		return true, nil
 	}
 
 	_, err := backoff.Retry(ctx, operation, backoff.WithBackOff(backOff))
+	if err != nil && lastErr != nil && !errors.Is(err, lastErr) {
+		// backoff.Retry returns only the context error once ctx is done; keep the cause.
+		return errors.Join(err, lastErr)
+	}
 	return err
 }
 
@@ -272,15 +307,27 @@ type PublishVarUpdateParams struct {
 	RecursionDepth int
 }
 
-//nolint:unparam
-func (r *HandlerAdapter) publishVarUpdate(ctx context.Context, params PublishVarUpdateParams) error {
+var errMissingVariableName = errors.New("variable name is required")
+
+// buildVarUpdate builds and validates the variable-update event and its subject.
+// The subject is trigger.vars.<action>.<hub>.<variable>; hub and variable names are passed
+// through config.SafeToken so each is exactly one subject token. The payload keeps the
+// original variable name.
+func buildVarUpdate(params PublishVarUpdateParams) (eventing.MdaiEvent, eventing.MdaiEventSubject, error) {
+	if params.VarName == "" {
+		return eventing.MdaiEvent{}, eventing.MdaiEventSubject{}, errMissingVariableName
+	}
+
 	pl := eventing.VariablesActionPayload{
 		VariableRef: params.VarName,
 		DataType:    string(params.VarType),
 		Operation:   params.Action,
 		Data:        params.Data,
 	}
-	plb, _ := json.Marshal(pl)
+	plb, err := json.Marshal(pl)
+	if err != nil {
+		return eventing.MdaiEvent{}, eventing.MdaiEventSubject{}, fmt.Errorf("marshal variable update payload: %w", err)
+	}
 
 	ev := eventing.MdaiEvent{
 		Name:           "var." + params.Action,
@@ -292,10 +339,14 @@ func (r *HandlerAdapter) publishVarUpdate(ctx context.Context, params PublishVar
 		Payload:        string(plb),
 	}
 	ev.ApplyDefaults()
+	if err := ev.Validate(); err != nil {
+		return eventing.MdaiEvent{}, eventing.MdaiEventSubject{}, fmt.Errorf("invalid variable update event: %w", err)
+	}
 
-	subj := eventing.NewMdaiEventSubject(eventing.TriggerEventType, fmt.Sprintf("%s.%s.%s", params.Action, params.Hub, params.VarName))
+	subj := eventing.NewMdaiEventSubject(eventing.TriggerEventType,
+		strings.Join([]string{params.Action, config.SafeToken(params.Hub), config.SafeToken(params.VarName)}, "."))
 
-	return r.publisher.Publish(ctx, ev, subj)
+	return ev, subj, nil
 }
 
 func makeAuditEntry(variableKey string, value string, correlationId string, operation string) StoreVariableAction {

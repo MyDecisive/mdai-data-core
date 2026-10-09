@@ -785,3 +785,24 @@ func TestNewPublisherStreamCreation(t *testing.T) {
 	err = pub2.Publish(ctx, event, subject)
 	require.NoError(t, err, "second publisher should publish successfully")
 }
+
+func TestPublishRejectsIncompleteSubject(t *testing.T) {
+	// Both checks run before the publisher touches NATS, so no server is needed.
+	pub := &EventPublisher{logger: zap.NewNop()}
+	event := eventing.MdaiEvent{Name: "TestEvent", HubName: "hub", Source: "test", Payload: `{"test": true}`}
+
+	cases := []struct {
+		name    string
+		subject eventing.MdaiEventSubject
+		wantErr string
+	}{
+		{name: "missing type", subject: eventing.NewMdaiEventSubject("", "a.b"), wantErr: "subject is required"},
+		{name: "missing path", subject: eventing.NewMdaiEventSubject(eventing.AlertEventType, ""), wantErr: "subject path is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := pub.Publish(t.Context(), event, tc.subject)
+			require.EqualError(t, err, tc.wantErr)
+		})
+	}
+}
