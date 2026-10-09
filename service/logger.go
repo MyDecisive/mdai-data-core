@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -29,7 +30,40 @@ const (
 // serviceName is the mdai service name of the service in the format "github.com/mydecisive/service-name"
 // internalLogger is for logging to stdout only, while appLogger is for logging through OTEL SDK.
 // Use LOG_LEVEL environment variable to change the log level.
+// If OpenTelemetry setup fails, it logs a warning and appLogger logs to stdout only;
+// use InitLoggerE to get the error instead.
 func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Logger, appLogger *zap.Logger, cleanup func()) {
+	internalLogger, stdCore, logLevel := newInternalLogger()
+
+	appLogger, cleanup, err := newAppLogger(ctx, serviceName, internalLogger, stdCore, logLevel)
+	if err != nil {
+		internalLogger.Warn("failed to set up OpenTelemetry; application logs will go to stdout only", zap.Error(err))
+		appLogger = zap.New(stdCore, zap.AddCaller(), zap.IncreaseLevel(logLevel))
+		cleanup = func() {
+			_ = internalLogger.Sync()
+			_ = appLogger.Sync()
+		}
+	}
+
+	return internalLogger, appLogger, cleanup
+}
+
+// InitLoggerE is like InitLogger, but returns an error instead of falling back to stdout-only
+// logging when OpenTelemetry setup fails. The loggers and cleanup function are nil on error.
+func InitLoggerE(ctx context.Context, serviceName string) (internalLogger *zap.Logger, appLogger *zap.Logger, cleanup func(), err error) {
+	internalLogger, stdCore, logLevel := newInternalLogger()
+
+	appLogger, cleanup, err = newAppLogger(ctx, serviceName, internalLogger, stdCore, logLevel)
+	if err != nil {
+		_ = internalLogger.Sync()
+		return nil, nil, nil, err
+	}
+
+	return internalLogger, appLogger, cleanup, nil
+}
+
+// newInternalLogger builds the stdout logger at the level set by LOG_LEVEL (default info).
+func newInternalLogger() (*zap.Logger, zapcore.Core, zap.AtomicLevel) {
 	// Define custom encoder configuration
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.TimeKey = "timestamp"                   // Rename the time field
@@ -54,22 +88,33 @@ func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Lo
 		zapcore.Lock(os.Stdout),               // Output to stdout
 		zapcore.DebugLevel,                    // Log level will be updated later
 	)
-	internalLogger = zap.New(stdCore, zap.AddCaller(), zap.IncreaseLevel(logLevel))
+	internalLogger := zap.New(stdCore, zap.AddCaller(), zap.IncreaseLevel(logLevel))
 	if invalidLogLevel {
 		internalLogger.Warn("invalid log level provided, defaulting to info", zap.String("level", logLevelValue))
 	}
 
+	return internalLogger, stdCore, logLevel
+}
+
+// newAppLogger sets up OTel and returns a logger that writes to both stdout and the OTel SDK.
+func newAppLogger(
+	ctx context.Context,
+	serviceName string,
+	internalLogger *zap.Logger,
+	stdCore zapcore.Core,
+	logLevel zap.AtomicLevel,
+) (*zap.Logger, func(), error) {
 	otelShutdown, err := setupOTel(ctx, internalLogger)
 	if err != nil {
-		internalLogger.Fatal("failed to setup OpenTelemetry", zap.Error(err))
+		return nil, nil, fmt.Errorf("set up OpenTelemetry: %w", err)
 	}
 
 	otelCore := otelzap.NewCore(serviceName)
 	multiCore := zapcore.NewTee(stdCore, otelCore)
 
-	appLogger = zap.New(multiCore, zap.AddCaller(), zap.IncreaseLevel(logLevel))
+	appLogger := zap.New(multiCore, zap.AddCaller(), zap.IncreaseLevel(logLevel))
 
-	cleanup = func() {
+	cleanup := func() {
 		if otelShutdown != nil {
 			_ = otelShutdown(context.Background())
 		}
@@ -77,7 +122,7 @@ func InitLogger(ctx context.Context, serviceName string) (internalLogger *zap.Lo
 		_ = appLogger.Sync()
 	}
 
-	return internalLogger, appLogger, cleanup
+	return appLogger, cleanup, nil
 }
 
 type ZapErrorHandler struct {
@@ -105,7 +150,6 @@ func setupOTel(ctx context.Context, internalLogger *zap.Logger) (ShutdownFunc, e
 
 	otel.SetErrorHandler(&ZapErrorHandler{logger: internalLogger})
 
-	var err error
 	shutdownFuncs := make([]ShutdownFunc, 0, 1)
 	// shutdown calls cleanup functions registered via shutdownFuncs.
 	// The errors from the calls are joined.
@@ -123,16 +167,11 @@ func setupOTel(ctx context.Context, internalLogger *zap.Logger) (ShutdownFunc, e
 		return errors.Join(errs...)
 	}
 
-	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
-	handleErr := func(inErr error) {
-		err = errors.Join(inErr, shutdown(ctx))
-	}
-
 	resourceWAttributes, err := resource.New(ctx, resource.WithAttributes(
 		attribute.String("mdai-logstream", "hub"),
 	))
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("create OTel resource: %w", err)
 	}
 
 	eventHandlerResource, err := resource.Merge(
@@ -140,22 +179,18 @@ func setupOTel(ctx context.Context, internalLogger *zap.Logger) (ShutdownFunc, e
 		resourceWAttributes,
 	)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("merge OTel resources: %w", err)
 	}
 
 	// Set up logger provider.
 	loggerProvider, err := newLoggerProvider(ctx, eventHandlerResource)
 	if err != nil {
-		handleErr(err)
-		return shutdown, err
+		return nil, fmt.Errorf("create OTel logger provider: %w", err)
 	}
 
 	shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
 	global.SetLoggerProvider(loggerProvider)
 
-	if err != nil {
-		return nil, err
-	}
 	internalLogger.Info("OTEL SDK is enabled")
 	if os.Getenv(otelExporterOtlpEndpointEnvVar) == "" {
 		internalLogger.Warn("No OTLP endpoint is defined, but OTEL SDK is enabled.")

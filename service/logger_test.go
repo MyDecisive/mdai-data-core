@@ -198,3 +198,61 @@ func TestInitLogger_OTelEndpointSet(t *testing.T) {
 	assert.Equal(t, "info", infoLog.Level)
 	assert.Equal(t, "OTEL SDK is enabled", infoLog.Msg)
 }
+
+// An OTLP endpoint that cannot be parsed makes the OTel exporter constructor fail.
+const invalidOtlpEndpoint = "not a url"
+
+func TestInitLoggerE_OTelDisabled(t *testing.T) {
+	t.Setenv(otelSdkDisabledEnvVar, "true")
+
+	captureStdout(t, func() {
+		internal, logger, cleanup, err := InitLoggerE(context.Background(), "github.com/mydecisive/test-svc")
+		assert.NoError(t, err)
+		assert.NotNil(t, internal)
+		assert.NotNil(t, logger)
+		if assert.NotNil(t, cleanup) {
+			assert.NotPanics(t, cleanup)
+		}
+	})
+}
+
+func TestInitLoggerE_OTelSetupError(t *testing.T) {
+	t.Setenv(otelSdkDisabledEnvVar, "false")
+	t.Setenv(otelExporterOtlpEndpointEnvVar, invalidOtlpEndpoint)
+
+	captureStdout(t, func() {
+		internal, logger, cleanup, err := InitLoggerE(context.Background(), "github.com/mydecisive/test-svc")
+		assert.ErrorContains(t, err, "set up OpenTelemetry")
+		assert.Nil(t, internal)
+		assert.Nil(t, logger)
+		assert.Nil(t, cleanup)
+	})
+}
+
+func TestInitLogger_OTelSetupErrorFallsBackToStdout(t *testing.T) {
+	t.Setenv(otelSdkDisabledEnvVar, "false")
+	t.Setenv(otelExporterOtlpEndpointEnvVar, invalidOtlpEndpoint)
+
+	lines := captureStdout(t, func() {
+		internal, logger, cleanup := InitLogger(context.Background(), "github.com/mydecisive/test-svc")
+		assert.NotNil(t, internal)
+		if assert.NotNil(t, logger) {
+			logger.Info("app-log-after-fallback")
+		}
+		if assert.NotNil(t, cleanup) {
+			assert.NotPanics(t, cleanup)
+		}
+	})
+
+	var warnMsgs, infoMsgs []string
+	for _, l := range lines {
+		switch l.Level {
+		case "warn":
+			warnMsgs = append(warnMsgs, l.Msg)
+		case "info":
+			infoMsgs = append(infoMsgs, l.Msg)
+		}
+	}
+	assert.Contains(t, warnMsgs, "failed to set up OpenTelemetry; application logs will go to stdout only")
+	assert.Contains(t, infoMsgs, "app-log-after-fallback", "app logger should still write to stdout")
+}

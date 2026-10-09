@@ -166,6 +166,10 @@ func SafeToken(s string) string {
 	return strings.NewReplacer(".", "_", " ", "_").Replace(s)
 }
 
+// Connect connects to NATS and returns the connection and a JetStream handle.
+// It blocks until the server completes a round-trip, retrying with backoff while the
+// server is unreachable. It returns an error, and closes the connection, if ctx is done
+// or the retry budget runs out first.
 func Connect(ctx context.Context, cfg Config) (*nats.Conn, jetstream.JetStream, error) {
 	natsOpts := []nats.Option{
 		nats.UserInfo("mdai", cfg.NatsPassword),
@@ -185,18 +189,19 @@ func Connect(ctx context.Context, cfg Config) (*nats.Conn, jetstream.JetStream, 
 		}),
 	}
 
-	var conn *nats.Conn
-	operation := func() (*nats.Conn, error) {
-		return nats.Connect(cfg.URL, natsOpts...)
-	}
-
-	conn, err := backoff.Retry(ctx, operation)
+	// With RetryOnFailedConnect, an unreachable server does not fail here; the client keeps
+	// reconnecting in the background and waitForNATSConnection waits for it. An error here
+	// means the configuration itself is invalid, so retrying would not help.
+	conn, err := nats.Connect(cfg.URL, natsOpts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("connect to NATS: %w", err)
 	}
 
 	// block here until we have completed an INFO/CONNECT/PONG round-trip
-	waitForNATSConnection(ctx, conn, cfg)
+	if err := waitForNATSConnection(ctx, conn, cfg); err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
 
 	js, err := jetstream.New(conn) // implements pcgroups’ JetStream interface
 	if err != nil {
@@ -209,7 +214,7 @@ func Connect(ctx context.Context, cfg Config) (*nats.Conn, jetstream.JetStream, 
 	return conn, js, nil
 }
 
-func waitForNATSConnection(ctx context.Context, conn *nats.Conn, cfg Config) {
+func waitForNATSConnection(ctx context.Context, conn *nats.Conn, cfg Config) error {
 	exp := backoff.NewExponentialBackOff()
 	exp.InitialInterval = initialInterval
 	exp.MaxInterval = maxInterval
@@ -240,9 +245,11 @@ func waitForNATSConnection(ctx context.Context, conn *nats.Conn, cfg Config) {
 		backoff.WithNotify(notify),
 	)
 	if err != nil {
-		cfg.Logger.Fatal("Unable to establish NATS connection", zap.Error(err))
+		cfg.Logger.Error("Unable to establish NATS connection", zap.Error(err))
+		return fmt.Errorf("wait for NATS connection: %w", err)
 	}
 	cfg.Logger.Info("NATS connection ready")
+	return nil
 }
 
 func GetMemberIDs() string {

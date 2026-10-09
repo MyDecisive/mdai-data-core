@@ -1,8 +1,10 @@
 .PHONY: test test-race lint tidy tidy-check vendor generate generate-check install-mocks cover coverv coverhtml clean-coverage
 GOTOOLCHAIN ?= go1.25.14
-GO := CGO_ENABLED=0 GOTOOLCHAIN=$(GOTOOLCHAIN) go
-# -mod=readonly: build from the module cache even if a local (gitignored) vendor/ exists and is stale.
-GO_TEST := $(GO) test -mod=readonly -count=1
+# -mod=readonly (added to any GOFLAGS you already set) makes every target, and the tools they run
+# (golangci-lint, mockgen, mockery), use the module cache even if a local, gitignored vendor/ exists
+# and is out of date. Keep vendor/ for your IDE if you like; `make` does not depend on it being current.
+GO := CGO_ENABLED=0 GOTOOLCHAIN=$(GOTOOLCHAIN) GOFLAGS="$(strip $(GOFLAGS) -mod=readonly)" go
+GO_TEST := $(GO) test -count=1
 # Where `go install` puts the mock generators; put first on PATH so `go generate` finds them.
 GO_BIN := $(or $(shell $(GO) env GOBIN),$(shell $(GO) env GOPATH)/bin)
 # Directories holding generated mocks (see mock/mock.go and eventing/publisher/publisher.go).

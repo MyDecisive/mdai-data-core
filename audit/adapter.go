@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -18,6 +19,9 @@ import (
 
 var (
 	metricRegex = regexp.MustCompile(`([a-zA-Z_:][a-zA-Z0-9_:]*)\{`)
+
+	// ErrInvalidRetention is returned when an audit stream retention environment variable cannot be parsed.
+	ErrInvalidRetention = errors.New("invalid audit stream retention")
 )
 
 const (
@@ -44,15 +48,41 @@ type AuditAdapter struct {
 	valkeyAuditStreamExpiry time.Duration
 }
 
+// NewAuditAdapter creates an AuditAdapter whose stream retention comes from StreamRetentionFromEnv.
+// If the configured retention is invalid, it logs an error and uses the 30-day default;
+// use NewAuditAdapterE to get the error instead.
 func NewAuditAdapter(
 	logger *zap.Logger,
 	valkeyClient valkey.Client,
 ) *AuditAdapter {
+	adapter, err := NewAuditAdapterE(logger, valkeyClient)
+	if err != nil {
+		logger.Error("Invalid Valkey stream retention; using default",
+			zap.Duration("retention", defaultRetention), zap.Error(err))
+		return &AuditAdapter{
+			logger:                  logger,
+			valkeyClient:            valkeyClient,
+			valkeyAuditStreamExpiry: defaultRetention,
+		}
+	}
+	return adapter
+}
+
+// NewAuditAdapterE creates an AuditAdapter whose stream retention comes from StreamRetentionFromEnv.
+// It returns an error wrapping ErrInvalidRetention if the configured retention is invalid.
+func NewAuditAdapterE(
+	logger *zap.Logger,
+	valkeyClient valkey.Client,
+) (*AuditAdapter, error) {
+	retention, err := StreamRetentionFromEnv(logger)
+	if err != nil {
+		return nil, err
+	}
 	return &AuditAdapter{
 		logger:                  logger,
 		valkeyClient:            valkeyClient,
-		valkeyAuditStreamExpiry: getStreamRetention(logger),
-	}
+		valkeyAuditStreamExpiry: retention,
+	}, nil
 }
 
 func (c *AuditAdapter) HandleEventsGet(ctx context.Context) ([]map[string]any, error) {
@@ -222,29 +252,40 @@ func GetAuditLogTTLMinId(valkeyAuditStreamExpiry time.Duration) string {
 	return strconv.FormatInt(time.Now().Add(-valkeyAuditStreamExpiry).UnixMilli(), 10)
 }
 
-func getStreamRetention(logger *zap.Logger) time.Duration {
+// StreamRetentionFromEnv returns the audit stream retention from VALKEY_AUDIT_STREAM_RETENTION
+// (e.g. "30d", "72h"), falling back to the deprecated VALKEY_AUDIT_STREAM_EXPIRY_MS and then to
+// a 30-day default. It returns an error wrapping ErrInvalidRetention if the variable in use is invalid.
+// A nil logger disables logging of the chosen retention.
+func StreamRetentionFromEnv(logger *zap.Logger) (time.Duration, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if s := os.Getenv(envRetention); s != "" {
 		d, err := parseHumanDuration(s)
-		if err != nil || d < 0 {
-			logger.Fatal("Invalid retention", zap.String("env", envRetention), zap.String("value", s), zap.Error(err))
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s=%q: %w", ErrInvalidRetention, envRetention, s, err)
 		}
 		logger.Info("Using custom Valkey stream retention", zap.String("env", envRetention), zap.Duration("retention", d))
-		return d
+		return d, nil
 	}
 
 	if s := os.Getenv(envRetentionMsOld); s != "" {
 		ms, err := strconv.ParseInt(s, 10, 64)
-		if err != nil || ms < 0 {
-			logger.Fatal("Invalid deprecated retention (ms)", zap.String("env", envRetentionMsOld), zap.String("value", s), zap.Error(err))
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s=%q: %w", ErrInvalidRetention, envRetentionMsOld, s, err)
+		}
+		if ms < 0 {
+			return 0, fmt.Errorf("%w: %s=%q: negative duration not allowed", ErrInvalidRetention, envRetentionMsOld, s)
 		}
 		d := time.Duration(ms) * time.Millisecond
 		logger.Warn("VALKEY_AUDIT_STREAM_EXPIRY_MS is deprecated; use VALKEY_AUDIT_STREAM_RETENTION",
 			zap.Duration("retention", d))
-		return d
+		return d, nil
 	}
 
 	logger.Info("Using default Valkey stream retention", zap.Duration("retention", defaultRetention))
-	return defaultRetention
+	return defaultRetention, nil
 }
 
 // parseHumanDuration accepts native Go durations ("72h", "90m", "100ms")
