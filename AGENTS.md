@@ -72,7 +72,7 @@ golangci-lint fmt
 make lint
 ```
 
-`make tidy-check` and `make generate-check` verify rather than fix: they fail if `go.mod`/`go.sum` are not tidy, or if the mocks in your working tree differ from what the pinned generators produce. Neither modifies your files: `make generate-check` generates into a temporary copy of the working tree and diffs the result. Run `make tidy` or `make generate` to fix, then review and commit the result. The test targets build with `-mod=readonly`, so a stale local `vendor/` directory is ignored. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them.
+`make tidy-check` and `make generate-check` verify rather than fix: they fail if `go.mod`/`go.sum` are not tidy, or if the mocks in your working tree differ from what the pinned generators produce. Neither modifies your files: `make generate-check` generates into a temporary copy of the working tree and diffs the result. Run `make tidy` or `make generate` to fix, then review and commit the result. Every `make` target runs Go with `-mod=readonly` (added to any `GOFLAGS` you set), so a stale local `vendor/` directory is ignored by the targets and the tools they run. `vendor/` and `*.out` are gitignored, so they normally won't appear as untracked changes. Do not force-add or commit them.
 
 `.golangci.yml` uses the golangci-lint v2 config format. A v1.x binary will reject it or behave differently, so match CI's `v2.4.0` (`make lint` does this for you). Newer versions report additional findings that CI does not.
 
@@ -126,7 +126,7 @@ Changes in these areas need extra care:
 - `eventing/publisher/publisher.go` drives MockGen (pinned `v0.6.0`) for `internal/mocks/eventing/publisher/publisher.go`.
 - `make generate` installs the pinned generator versions from the Makefile before running `go generate ./...`.
 - After changing an interface represented by a generated mock, regenerate it and include both the source-interface change and generated output.
-- Keep `go.mod` and `go.sum` consistent. To check for drift without modifying files, run `CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go mod tidy -diff` (or `make tidy-check`). `vendor/` is gitignored and never committed; nothing in the build or CI uses it, and `make vendor` remains only as an optional standalone target. Use `go mod tidy` only when dependency changes require it, and review `go.mod`/`go.sum` diffs carefully.
+- Keep `go.mod` and `go.sum` consistent. To check for drift without modifying files, run `CGO_ENABLED=0 GOTOOLCHAIN=go1.25.14 go mod tidy -diff` (or `make tidy-check`). `vendor/` is gitignored and never committed; nothing in the build or CI uses it. A local copy is fine (some IDEs resolve dependencies better with it), but keep it current with `make vendor` after dependency changes, because plain `go` commands and gopls read it when it exists. Use `go mod tidy` only when dependency changes require it, and review `go.mod`/`go.sum` diffs carefully.
 
 ## Before handing off a change
 

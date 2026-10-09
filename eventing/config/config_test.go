@@ -83,6 +83,81 @@ func TestConnectRetriesUntilServerAvailable(t *testing.T) {
 	_ = conn.Drain()
 }
 
+// unreachableNATSURL returns a NATS URL for a local port that nothing is listening on.
+func unreachableNATSURL(t *testing.T) string {
+	t.Helper()
+	lc := net.ListenConfig{}
+	l, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err, "failed to pick a free port")
+	addr, ok := l.Addr().(*net.TCPAddr)
+	require.True(t, ok, "expected TCP address, got %T", l.Addr())
+	_ = l.Close() // nothing listens on this port from here on
+	return fmt.Sprintf("nats://127.0.0.1:%d", addr.Port)
+}
+
+func TestConnectReturnsErrorWhenServerUnreachable(t *testing.T) {
+	cfg := Config{
+		URL:        unreachableNATSURL(t),
+		ClientName: "test-unreachable",
+		Logger:     zap.NewNop(),
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	conn, js, err := Connect(ctx, cfg)
+	require.Error(t, err, "Connect should give up when ctx expires instead of exiting the process")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Nil(t, conn)
+	assert.Nil(t, js)
+	assert.Less(t, time.Since(start), 5*time.Second, "Connect should return promptly once ctx expires")
+}
+
+func TestConnectReturnsErrorWhenCanceled(t *testing.T) {
+	cfg := Config{
+		URL:        unreachableNATSURL(t),
+		ClientName: "test-canceled",
+		Logger:     zap.NewNop(),
+	}
+
+	// Safety net: if cancellation handling regresses, the timeout ends Connect with DeadlineExceeded
+	// (failing the ErrorIs check below) instead of the test hanging until the retry budget runs out.
+	parent, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+
+	// Cancel while Connect is waiting for the server, as a service shutting down during startup would.
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	time.AfterFunc(200*time.Millisecond, cancel)
+
+	start := time.Now()
+	conn, js, err := Connect(ctx, cfg)
+	require.Error(t, err, "Connect should give up when ctx is canceled instead of exiting the process")
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, conn)
+	assert.Nil(t, js)
+	assert.Less(t, time.Since(start), 5*time.Second, "Connect should return promptly once ctx is canceled")
+}
+
+func TestConnectInvalidURLFailsFast(t *testing.T) {
+	cfg := Config{
+		URL:        "nats://127.0.0.1:not-a-port",
+		ClientName: "test-invalid-url",
+		Logger:     zap.NewNop(),
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	conn, js, err := Connect(ctx, cfg)
+	require.Error(t, err)
+	assert.Nil(t, conn)
+	assert.Nil(t, js)
+	assert.Less(t, time.Since(start), time.Second, "an invalid URL should not be retried")
+}
+
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
 		name     string
