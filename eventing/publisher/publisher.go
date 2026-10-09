@@ -61,6 +61,9 @@ func (p *EventPublisher) Publish(ctx context.Context, event eventing.MdaiEvent, 
 	if subject.Type == "" {
 		return errors.New("subject is required")
 	}
+	if subject.Path == "" {
+		return errors.New("subject path is required")
+	}
 
 	fullSubject := subject.PrefixedString(p.cfg.Subject)
 	p.logger.Info("Publishing event to subject", zap.String("subject", fullSubject), zap.Object("event", &event))

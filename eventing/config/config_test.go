@@ -25,6 +25,17 @@ func TestSafeToken(t *testing.T) {
 		"a b c":       "a_b_c",
 		". . .":       "_____", // FIXME: replace with a more sophisticated token sanitization
 		"valid_token": "valid_token",
+		"a*b>c":       "a_b_c",
+		"tab\tx":      "tab_x",
+		"line\nx":     "line_x",
+		"cr\rx":       "cr_x",
+		"ff\fx":       "ff_x",
+		"vt\vx":       "vt_x",
+		"nul\x00x":    "nul_x",
+		"nbsp\u00a0x": "nbsp_x",
+		"ls\u2028x":   "ls_x",
+		"héllo":       "héllo",
+		"var:foo":     "var:foo",
 	}
 	for input, want := range cases {
 		got := SafeToken(input)

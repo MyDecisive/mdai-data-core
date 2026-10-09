@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cenkalti/backoff/v5"
 	mapset "github.com/deckarep/golang-set/v2"
@@ -158,12 +159,25 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
+// safeTokenRune maps a rune that should not appear in a single NATS subject token to "_":
+// the "." separator, the "*" and ">" wildcards, and any Unicode whitespace or control
+// character (including form feed, vertical tab, NUL and non-breaking space).
+func safeTokenRune(r rune) rune {
+	if r == '.' || r == '*' || r == '>' || unicode.IsSpace(r) || unicode.IsControl(r) {
+		return '_'
+	}
+	return r
+}
+
+// SafeToken returns s as a single valid NATS subject token: surrounding whitespace is trimmed,
+// separators, wildcards, and inner whitespace and control characters become "_", and an empty
+// result becomes "unknown". Different inputs can map to the same token (for example "a.b" and "a_b").
 func SafeToken(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return "unknown"
 	}
-	return strings.NewReplacer(".", "_", " ", "_").Replace(s)
+	return strings.Map(safeTokenRune, s)
 }
 
 // Connect connects to NATS and returns the connection and a JetStream handle.
