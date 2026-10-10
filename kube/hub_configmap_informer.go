@@ -3,7 +3,9 @@ package kube
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
@@ -70,23 +72,25 @@ type HubConfigMapController struct {
 	CmInformer      coreinformers.ConfigMapInformer
 	namespace       string
 	Logger          *zap.Logger
-	stopCh          chan struct{}
+	lifecycle       informerLifecycle
 }
 
 var _ HubConfigMapStore = &HubConfigMapController{}
 
+// Run starts the informer and waits for its cache to sync.
 func (cmc *HubConfigMapController) Run() error {
-	cmc.stopCh = make(chan struct{})
+	stopCh := cmc.lifecycle.start()
 
-	cmc.InformerFactory.Start(cmc.stopCh)
-	if !cache.WaitForCacheSync(cmc.stopCh, cmc.CmInformer.Informer().HasSynced) {
+	cmc.InformerFactory.Start(stopCh)
+	if !cache.WaitForCacheSync(stopCh, cmc.CmInformer.Informer().HasSynced) {
 		return errConfigMapCache
 	}
 	return nil
 }
 
+// Stop stops the informer. It is safe to call more than once, and before Run.
 func (cmc *HubConfigMapController) Stop() {
-	close(cmc.stopCh)
+	cmc.lifecycle.stop()
 }
 
 func NewHubConfigMapController(configMapTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*HubConfigMapController, error) {
@@ -116,14 +120,7 @@ func NewHubConfigMapController(configMapTypes []string, namespace string, client
 			return byHubAndTypeIndex(logger, obj)
 		},
 		ByType: func(obj interface{}) ([]string, error) {
-			cm := obj.(*v1.ConfigMap)
-			configMapType, err := getConfigMapType(cm)
-			if err != nil {
-				logger.Error("failed to get ConfigMap type", zap.String("ConfigMap name", cm.Name))
-				return nil, err
-			}
-
-			return []string{configMapType}, nil
+			return byTypeIndex(logger, obj)
 		},
 	}); err != nil {
 		logger.Error("failed to add index", zap.Error(err))
@@ -146,6 +143,33 @@ func buildConfigmapLabelSelector(configMapTypes []string) (string, error) {
 		return "", err
 	}
 	return labels.NewSelector().Add(*req).String(), nil
+}
+
+// informerLifecycle holds an informer's stop channel. It makes Stop safe to call more than
+// once or before Run, and Run safe to call again while running.
+type informerLifecycle struct {
+	mu     sync.Mutex
+	stopCh chan struct{}
+}
+
+// start returns the stop channel to pass to the informer, creating it if not running.
+func (l *informerLifecycle) start() <-chan struct{} {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopCh == nil {
+		l.stopCh = make(chan struct{})
+	}
+	return l.stopCh
+}
+
+// stop closes the stop channel if running; otherwise it does nothing.
+func (l *informerLifecycle) stop() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopCh != nil {
+		close(l.stopCh)
+		l.stopCh = nil
+	}
 }
 
 func getHubName(configMap *v1.ConfigMap) (string, error) {
@@ -186,6 +210,22 @@ func byHubAndTypeIndex(logger *zap.Logger, obj interface{}) ([]string, error) {
 		return nil, nil
 	}
 	return []string{getHubAndTypeKey(hubName, configMapType)}, nil
+}
+
+// byTypeIndex must never return an error, for the same reason as byHubAndTypeIndex.
+// The watch filter requires the type label, so a ConfigMap without it should not reach
+// here; if one does, it is skipped rather than failing the informer.
+func byTypeIndex(logger *zap.Logger, obj interface{}) ([]string, error) {
+	cm, ok := obj.(*v1.ConfigMap)
+	if !ok {
+		return nil, nil
+	}
+	configMapType, err := getConfigMapType(cm)
+	if err != nil {
+		logger.Warn("skipping ConfigMap without type label from type index", zap.String("ConfigMap name", cm.Name))
+		return nil, nil
+	}
+	return []string{configMapType}, nil
 }
 
 func NewK8sClient(logger *zap.Logger) (kubernetes.Interface, error) {
@@ -244,7 +284,8 @@ func (cmc *HubConfigMapController) GetAllHubsToDataMap() (map[string]map[string]
 			cmc.Logger.Error("Failed to get hub name for ConfigMap", zap.String("ConfigMap name", cm.Name), zap.Error(err))
 			continue
 		}
-		hubMap[hubName] = cm.Data
+		// copy so callers can't modify the informer cache through the returned map.
+		hubMap[hubName] = maps.Clone(cm.Data)
 	}
 	return hubMap, nil
 }
@@ -271,7 +312,8 @@ func (cmc *HubConfigMapController) getAllHubsToDataMapByType(configMapType strin
 			return nil, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hubName, configMapType)
 		}
 
-		hubMap[hubName] = cm.Data
+		// copy so callers can't modify the informer cache through the returned map.
+		hubMap[hubName] = maps.Clone(cm.Data)
 	}
 
 	return hubMap, nil
@@ -324,7 +366,8 @@ func (cmc *HubConfigMapController) GetConfigMapByHubName(hubName string) (*v1.Co
 		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	}
 
-	return matchedConfigMap, nil
+	// return a deep copy so consumers can't directly modify the pointer to the object in cache.
+	return matchedConfigMap.DeepCopy(), nil
 }
 
 // getConfigMapDataByHubNameAndType returns config map data and whether the hub/type exists.
@@ -345,7 +388,8 @@ func (cmc *HubConfigMapController) getConfigMapDataByHubNameAndType(hubName stri
 		return nil, false, fmt.Errorf("failed to deserialize data to ConfigMap, hub name: %s, type: %s", hubName, configMapType)
 	}
 
-	return cm.Data, true, nil
+	// copy so callers can't modify the informer cache through the returned map.
+	return maps.Clone(cm.Data), true, nil
 }
 
 // GetEnvConfigMapDataByHubName returns variables config map data for the given hub.

@@ -35,23 +35,25 @@ type ConfigMapController struct {
 	cmLister        corev1.ConfigMapLister
 	cmWriter        kubernetes.Interface
 	logger          *zap.Logger
-	stopCh          chan struct{}
+	lifecycle       informerLifecycle
 }
 
 var _ ConfigMapStore = &ConfigMapController{}
 
+// Run starts the informer and waits for its cache to sync.
 func (cmc *ConfigMapController) Run() error {
-	cmc.stopCh = make(chan struct{})
+	stopCh := cmc.lifecycle.start()
 
-	cmc.informerFactory.Start(cmc.stopCh)
-	if !cache.WaitForCacheSync(cmc.stopCh, cmc.cmInformer.HasSynced) {
+	cmc.informerFactory.Start(stopCh)
+	if !cache.WaitForCacheSync(stopCh, cmc.cmInformer.HasSynced) {
 		return errConfigMapCache
 	}
 	return nil
 }
 
+// Stop stops the informer. It is safe to call more than once, and before Run.
 func (cmc *ConfigMapController) Stop() {
-	close(cmc.stopCh)
+	cmc.lifecycle.stop()
 }
 
 func NewConfigMapController(configMapTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*ConfigMapController, error) {

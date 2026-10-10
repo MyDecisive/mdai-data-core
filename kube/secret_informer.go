@@ -48,21 +48,23 @@ type SecretController struct {
 	secretWriter    kubernetes.Interface
 	namespace       string
 	logger          *zap.Logger
-	stopCh          chan struct{}
+	lifecycle       informerLifecycle
 }
 
+// Run starts the informer and waits for its cache to sync.
 func (sc *SecretController) Run() error {
-	sc.stopCh = make(chan struct{})
+	stopCh := sc.lifecycle.start()
 
-	sc.informerFactory.Start(sc.stopCh)
-	if !cache.WaitForCacheSync(sc.stopCh, sc.secretInformer.HasSynced) {
+	sc.informerFactory.Start(stopCh)
+	if !cache.WaitForCacheSync(stopCh, sc.secretInformer.HasSynced) {
 		return errors.New("failed to populate Secret cache")
 	}
 	return nil
 }
 
+// Stop stops the informer. It is safe to call more than once, and before Run.
 func (sc *SecretController) Stop() {
-	close(sc.stopCh)
+	sc.lifecycle.stop()
 }
 
 func NewSecretController(secretTypes []string, namespace string, clientset kubernetes.Interface, logger *zap.Logger) (*SecretController, error) {

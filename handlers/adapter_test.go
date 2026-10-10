@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"testing"
 	"time"
@@ -510,10 +511,7 @@ func TestStoreVariableAction_ToSequence_FieldsPresent(t *testing.T) {
 	}
 
 	// Collect yielded pairs into a map
-	got := map[string]string{}
-	for k, v := range action.ToSequence() {
-		got[k] = v
-	}
+	got := maps.Collect(action.ToSequence())
 
 	// expected non-empty keys
 	for _, k := range []string{
