@@ -105,6 +105,7 @@ Changes in these areas need extra care:
   - Publication runs only after the Valkey step succeeds.
   - Publication is wrapped in `retryWithBackoff`, bounded by the adapter's `retryMaxTime`. A non-positive value means a single attempt.
   - Keep the retry when adding new mutations.
+  - The audit entry records the published event's ID (`event_id`), hub, and recursion depth, so an audit row can be matched to its event. The handler and `audit.AuditAdapter` both take the stream retention from `audit.StreamRetentionFromEnv`; keep them in sync, because every `XADD` trims the shared stream.
 - Rule and trigger decoding intentionally rejects unknown fields. Preserve strict decoding so configuration mistakes fail early.
 - Informer-backed objects may originate from shared caches. Return copies before exposing mutable Kubernetes objects or maps; do not let callers mutate cached state through returned pointers.
 

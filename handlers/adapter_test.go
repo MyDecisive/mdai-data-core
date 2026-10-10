@@ -198,7 +198,12 @@ func TestMakeAuditEntry(t *testing.T) {
 //nolint:goconst
 func TestAddElementToSet_Success(t *testing.T) {
 	ctx := t.Context()
-	hub, key, value, corr := "hub-a", "var:set:tags", "green", "corr-1"
+	const (
+		hub   = "hub-a"
+		key   = "var:set:tags"
+		value = "green"
+		corr  = "corr-1"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -233,7 +238,12 @@ func TestAddElementToSet_Success(t *testing.T) {
 
 func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 	ctx := t.Context()
-	hub, key, value, corr := "hub-a", "var:set:tags", "blue", "corr-2"
+	const (
+		hub   = "hub-a"
+		key   = "var:set:tags"
+		value = "blue"
+		corr  = "corr-2"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -278,7 +288,12 @@ func TestAddElementToSet_RetryThenSuccess(t *testing.T) {
 
 func TestRemoveElementFromSet_PublishError(t *testing.T) {
 	ctx := t.Context()
-	hub, key, value, corr := "hub-a", "var:set:tags", "red", "corr-3"
+	const (
+		hub   = "hub-a"
+		key   = "var:set:tags"
+		value = "red"
+		corr  = "corr-3"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -301,7 +316,13 @@ func TestRemoveElementFromSet_PublishError(t *testing.T) {
 
 func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
 	ctx := t.Context()
-	hub, key, field, value, corr := "hub-b", "var:map:settings", "mode", "auto", "corr-4"
+	const (
+		hub   = "hub-b"
+		key   = "var:map:settings"
+		field = "mode"
+		value = "auto"
+		corr  = "corr-4"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -333,7 +354,12 @@ func TestSetMapEntry_BehaviorAndPayload(t *testing.T) {
 
 func TestRemoveMapEntry_BehaviorAndPayload(t *testing.T) {
 	ctx := t.Context()
-	hub, key, field, corr := "hub-b", "var:map:settings", "obsolete", "corr-5"
+	const (
+		hub   = "hub-b"
+		key   = "var:map:settings"
+		field = "obsolete"
+		corr  = "corr-5"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -432,7 +458,13 @@ func TestRetryWithBackoff_TimesOut(t *testing.T) {
 }
 
 func TestBuildVarUpdate_BuildsEventAndSubject(t *testing.T) {
-	hub, varName, action, data, corr := "hub-z", "var:foo", "set", "abc", "c-9"
+	const (
+		hub     = "hub-z"
+		varName = "var:foo"
+		action  = "set"
+		data    = "abc"
+		corr    = "c-9"
+	)
 	varType := variables.DataTypeString
 	recDepth := 7
 
@@ -506,7 +538,12 @@ func TestStoreVariableAction_ToSequence_FieldsPresent(t *testing.T) {
 
 func TestMutation_SanitizesSubjectTokens(t *testing.T) {
 	ctx := t.Context()
-	hub, key, value, corr := "hub.x", "a.b *>c\fd", "v", "corr-s"
+	const (
+		hub   = "hub.x"
+		key   = "a.b *>c\fd"
+		value = "v"
+		corr  = "corr-s"
+	)
 
 	adapter, client, pub, ctrl := newAdapterWithMocks(t)
 	defer ctrl.Finish()
@@ -627,4 +664,145 @@ func TestRetryWithBackoff_CallerCancellation(t *testing.T) {
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Contains(t, err.Error(), "still failing", "the last publish error should be kept")
+}
+
+// auditFields returns the field/value pairs of the XADD audit command sent with a mutation.
+func auditFields(t *testing.T, cmds []valkey.Completed) map[string]string {
+	t.Helper()
+	require.Len(t, cmds, 2, "expected the variable update and the audit XADD")
+	args := cmds[1].Commands()
+	// XADD <stream> MINID <threshold> * field value [field value ...]
+	require.GreaterOrEqual(t, len(args), 5)
+	require.Equal(t, "XADD", args[0])
+	fields := map[string]string{}
+	for i := 5; i+1 < len(args); i += 2 {
+		fields[args[i]] = args[i+1]
+	}
+	return fields
+}
+
+func TestMutation_AuditEntryMatchesPublishedEvent(t *testing.T) {
+	const (
+		hub   = "my-hub"
+		key   = "my-var"
+		corr  = "corr-a"
+		depth = 3
+	)
+
+	cases := []struct {
+		name          string
+		mutate        func(ctx context.Context, a *HandlerAdapter) error
+		wantOperation string
+		wantField     string
+	}{
+		{
+			name: "set entry",
+			mutate: func(ctx context.Context, a *HandlerAdapter) error {
+				return a.AddElementToSet(ctx, key, hub, "blue", corr, depth)
+			},
+			wantOperation: "Add element to set",
+		},
+		{
+			name: "map set",
+			mutate: func(ctx context.Context, a *HandlerAdapter) error {
+				return a.SetMapEntry(ctx, key, hub, "color", "blue", corr, depth)
+			},
+			wantOperation: "Set map entry",
+			wantField:     "color",
+		},
+		{
+			name: "map remove",
+			mutate: func(ctx context.Context, a *HandlerAdapter) error {
+				return a.RemoveMapEntry(ctx, key, hub, "color", corr, depth)
+			},
+			wantOperation: "Remove map entry",
+			wantField:     "color",
+		},
+		{
+			name: "int scalar",
+			mutate: func(ctx context.Context, a *HandlerAdapter) error {
+				return a.SetScalarValue(ctx, key, hub, variables.DataTypeInt, "7", corr, depth)
+			},
+			wantOperation: "Set int value",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			adapter, client, pub, ctrl := newAdapterWithMocks(t)
+			defer ctrl.Finish()
+			adapter.retryMaxTime = 0
+
+			var audit map[string]string
+			client.EXPECT().DoMulti(ctx, gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, cmds ...valkey.Completed) []valkey.ValkeyResult {
+					audit = auditFields(t, cmds)
+					return []valkey.ValkeyResult{
+						vmock.Result(vmock.ValkeyInt64(1)),
+						vmock.Result(vmock.ValkeyString("1-0")),
+					}
+				})
+
+			var published eventing.MdaiEvent
+			pub.EXPECT().Publish(ctx, gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, ev eventing.MdaiEvent, _ eventing.MdaiEventSubject) error {
+					published = ev
+					return nil
+				})
+
+			require.NoError(t, tc.mutate(ctx, adapter))
+
+			require.NotEmpty(t, published.ID)
+			assert.Equal(t, published.ID, audit["event_id"], "the audit entry should reference the published event")
+			assert.Equal(t, hub, audit["hub_name"])
+			assert.Equal(t, strconv.Itoa(depth), audit["recursion_depth"])
+			assert.Equal(t, corr, audit["correlation_id"])
+			assert.Equal(t, key, audit["target"])
+			assert.Equal(t, tc.wantOperation, audit["operation"])
+
+			var pl eventing.VariablesActionPayload
+			require.NoError(t, json.Unmarshal([]byte(published.Payload), &pl))
+			if tc.wantField == "" {
+				assert.NotContains(t, audit, "field")
+				assert.Empty(t, pl.Field)
+			} else {
+				assert.Equal(t, tc.wantField, audit["field"])
+				assert.Equal(t, tc.wantField, pl.Field)
+			}
+		})
+	}
+}
+
+func TestNewHandlerAdapter_AuditStreamRetention(t *testing.T) {
+	newAdapter := func(t *testing.T, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
+		t.Helper()
+		ctrl := gomock.NewController(t)
+		return NewHandlerAdapter(vmock.NewClient(ctrl), zap.NewNop(), publisher.NewMockPublisher(ctrl), opts...)
+	}
+
+	t.Run("from env", func(t *testing.T) {
+		t.Setenv("VALKEY_AUDIT_STREAM_RETENTION", "72h")
+		t.Setenv("VALKEY_AUDIT_STREAM_EXPIRY_MS", "")
+		assert.Equal(t, 72*time.Hour, newAdapter(t).valkeyAdapter.AuditStreamExpiry())
+	})
+
+	t.Run("explicit option overrides env", func(t *testing.T) {
+		t.Setenv("VALKEY_AUDIT_STREAM_RETENTION", "72h")
+		t.Setenv("VALKEY_AUDIT_STREAM_EXPIRY_MS", "")
+		adapter := newAdapter(t, variables.WithValkeyAuditStreamExpiry(time.Hour))
+		assert.Equal(t, time.Hour, adapter.valkeyAdapter.AuditStreamExpiry())
+	})
+
+	t.Run("invalid env falls back to default", func(t *testing.T) {
+		t.Setenv("VALKEY_AUDIT_STREAM_RETENTION", "30 days")
+		t.Setenv("VALKEY_AUDIT_STREAM_EXPIRY_MS", "")
+		assert.Equal(t, 30*24*time.Hour, newAdapter(t).valkeyAdapter.AuditStreamExpiry())
+	})
+
+	t.Run("unset uses default", func(t *testing.T) {
+		t.Setenv("VALKEY_AUDIT_STREAM_RETENTION", "")
+		t.Setenv("VALKEY_AUDIT_STREAM_EXPIRY_MS", "")
+		assert.Equal(t, 30*24*time.Hour, newAdapter(t).valkeyAdapter.AuditStreamExpiry())
+	})
 }

@@ -148,5 +148,7 @@ type VariablesActionPayload struct {
 	VariableRef string `json:"variableRef"`
 	DataType    string `json:"dataType"`
 	Operation   string `json:"operation"`
-	Data        any    `json:"data"`
+	// Field is the map field for map entry updates; omitted for other data types.
+	Field string `json:"field,omitempty"`
+	Data  any    `json:"data"`
 }
