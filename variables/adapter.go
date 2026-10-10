@@ -3,6 +3,7 @@ package variables
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"strconv"
 	"strings"
@@ -177,6 +178,10 @@ func (r *ValkeyAdapter) GetString(ctx context.Context, variableKey string, hubNa
 	return value, true, nil
 }
 
+// GetMapAsString returns the map variable as YAML. A value is written as a YAML number only
+// when it is a canonical int64 or float (see yamlValue); every other value, including "007",
+// "1e3", "NaN" and integers too large for int64, is written as a string, unchanged. Numbers
+// keep their value, but floats may be written in a different notation (e.g. 0.00001 as 1e-05).
 func (r *ValkeyAdapter) GetMapAsString(ctx context.Context, variableKey string, hubName string) (string, error) {
 	key := r.composeStorageKey(variableKey, hubName)
 	raw, err := r.client.Do(ctx, r.client.B().Hgetall().Key(key).Build()).AsStrMap()
@@ -187,13 +192,7 @@ func (r *ValkeyAdapter) GetMapAsString(ctx context.Context, variableKey string, 
 
 	data := make(map[string]any, len(raw))
 	for k, v := range raw {
-		if i, err := strconv.Atoi(v); err == nil {
-			data[k] = i // store as int
-		} else if f, err := strconv.ParseFloat(v, 64); err == nil {
-			data[k] = f // or float
-		} else {
-			data[k] = v // leave as string
-		}
+		data[k] = yamlValue(v)
 	}
 
 	yamlData, err := yaml.Marshal(data)
@@ -204,6 +203,43 @@ func (r *ValkeyAdapter) GetMapAsString(ctx context.Context, variableKey string, 
 
 	r.logger.Debug("Data received from storage", zap.String("key", key), zap.String("yaml", string(yamlData)))
 	return string(yamlData), nil
+}
+
+// yamlValue returns v as an int64 or float64 when that number formats back to exactly v, and
+// v unchanged otherwise, so a number is never reinterpreted.
+//   - Integer text (an optional sign and digits) becomes an int64 only in the canonical form
+//     from canonicalize.go; anything else, such as "007", "-0" or a value too large for int64,
+//     stays a string. It never falls back to float, which would turn an integer into a float.
+//   - Other text becomes a float64 when it is finite and matches the plain decimal or the
+//     shortest ('g') form. YAML always writes the 'g' form, so the notation may change but
+//     the value does not.
+func yamlValue(v string) any {
+	if isIntegerText(v) {
+		if i, err := strconv.ParseInt(v, 10, 64); err == nil && strconv.FormatInt(i, 10) == v {
+			return i
+		}
+		return v
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
+		if strconv.FormatFloat(f, 'f', -1, 64) == v || strconv.FormatFloat(f, 'g', -1, 64) == v {
+			return f
+		}
+	}
+	return v
+}
+
+// isIntegerText reports whether v is an optional sign followed by one or more ASCII digits.
+func isIntegerText(v string) bool {
+	digits := strings.TrimLeft(v, "+-")
+	if digits == "" || len(v)-len(digits) > 1 {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *ValkeyAdapter) GetMap(ctx context.Context, variableKey string, hubName string) (map[string]string, error) {

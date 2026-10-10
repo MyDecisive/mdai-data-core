@@ -1,6 +1,7 @@
 package variables
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +12,22 @@ import (
 // ErrInvalidDefault is the sentinel for any canonicalization failure.
 var ErrInvalidDefault = errors.New("invalid default")
 
+// isJSONNull reports whether raw is the JSON literal null (ignoring surrounding whitespace).
+// A json.RawMessage struct field decoded from `"default": null` holds these bytes, not nil.
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+// errNullDefault is returned by the canonicalizers for a JSON null, which has no value to
+// canonicalize. (encoding/json would otherwise decode it as the zero value without error.)
+var errNullDefault = fmt.Errorf("%w: null is not a value", ErrInvalidDefault)
+
 // CanonicalizeScalar returns the canonical Valkey string form of raw as dataType.
-// Non-scalar dataType returns an error.
+// Non-scalar dataType and a JSON null return an error.
 func CanonicalizeScalar(raw json.RawMessage, dataType DataType) (string, error) {
+	if isJSONNull(raw) {
+		return "", errNullDefault
+	}
 	switch dataType {
 	case DataTypeString:
 		var decoded string
@@ -54,9 +68,12 @@ func CanonicalizeScalar(raw json.RawMessage, dataType DataType) (string, error) 
 	}
 }
 
-// CanonicalizeSet decodes raw as []string. Null elements and non-string
-// elements are rejected.
+// CanonicalizeSet decodes raw as []string. A null array, null elements and
+// non-string elements are rejected.
 func CanonicalizeSet(raw json.RawMessage) ([]string, error) {
+	if isJSONNull(raw) {
+		return nil, errNullDefault
+	}
 	var elements []any
 	if err := json.Unmarshal(raw, &elements); err != nil {
 		return nil, fmt.Errorf("%w: array of strings expected: %w", ErrInvalidDefault, err)
@@ -75,9 +92,12 @@ func CanonicalizeSet(raw json.RawMessage) ([]string, error) {
 	return out, nil
 }
 
-// CanonicalizeMap decodes raw as map[string]string. Null values and non-string
-// values are rejected.
+// CanonicalizeMap decodes raw as map[string]string. A null object, null values
+// and non-string values are rejected.
 func CanonicalizeMap(raw json.RawMessage) (map[string]string, error) {
+	if isJSONNull(raw) {
+		return nil, errNullDefault
+	}
 	var entries map[string]any
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, fmt.Errorf("%w: object with string values expected: %w", ErrInvalidDefault, err)

@@ -27,8 +27,8 @@ type ResolveResult struct {
 }
 
 // Resolve reads the variable; on not-found it materializes defaultRaw via the
-// canonicalizers. defaultRaw==nil means no default declared. For set/map, a
-// zero-length read is treated as not-found.
+// canonicalizers. defaultRaw==nil or a JSON null means no default declared. For
+// set/map, a zero-length read is treated as not-found.
 func Resolve(
 	ctx context.Context,
 	adapter Reader,
@@ -92,8 +92,14 @@ func Resolve(
 	}
 }
 
+// noDefault reports whether defaultRaw declares no default: nil, or a JSON null
+// (which is what a json.RawMessage field decoded from `"default": null` holds).
+func noDefault(defaultRaw json.RawMessage) bool {
+	return defaultRaw == nil || isJSONNull(defaultRaw)
+}
+
 func resolveScalarDefault(dataType DataType, defaultRaw json.RawMessage) (ResolveResult, error) {
-	if defaultRaw == nil {
+	if noDefault(defaultRaw) {
 		return ResolveResult{DataType: dataType}, nil
 	}
 	canonical, err := CanonicalizeScalar(defaultRaw, dataType)
@@ -104,7 +110,7 @@ func resolveScalarDefault(dataType DataType, defaultRaw json.RawMessage) (Resolv
 }
 
 func resolveSetDefault(defaultRaw json.RawMessage) (ResolveResult, error) {
-	if defaultRaw == nil {
+	if noDefault(defaultRaw) {
 		return ResolveResult{DataType: DataTypeSet}, nil
 	}
 	canonical, err := CanonicalizeSet(defaultRaw)
@@ -115,7 +121,7 @@ func resolveSetDefault(defaultRaw json.RawMessage) (ResolveResult, error) {
 }
 
 func resolveMapDefault(defaultRaw json.RawMessage) (ResolveResult, error) {
-	if defaultRaw == nil {
+	if noDefault(defaultRaw) {
 		return ResolveResult{DataType: DataTypeMap}, nil
 	}
 	canonical, err := CanonicalizeMap(defaultRaw)
