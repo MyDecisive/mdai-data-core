@@ -163,3 +163,24 @@ func TestCanonicalizeErrorsUnwrap(t *testing.T) {
 	_, err := CanonicalizeScalar(json.RawMessage(`"not-int"`), DataTypeInt)
 	require.True(t, errors.Is(err, ErrInvalidDefault))
 }
+
+func TestCanonicalize_RejectsNull(t *testing.T) {
+	for _, raw := range []string{`null`, ` null `, "\nnull\t"} {
+		for _, dataType := range []DataType{DataTypeString, DataTypeInt, DataTypeFloat, DataTypeBoolean} {
+			_, err := CanonicalizeScalar(json.RawMessage(raw), dataType)
+			require.ErrorIs(t, err, ErrInvalidDefault, "scalar %s, raw %q", dataType, raw)
+		}
+
+		_, err := CanonicalizeSet(json.RawMessage(raw))
+		require.ErrorIs(t, err, ErrInvalidDefault, "set, raw %q", raw)
+
+		_, err = CanonicalizeMap(json.RawMessage(raw))
+		require.ErrorIs(t, err, ErrInvalidDefault, "map, raw %q", raw)
+	}
+}
+
+func TestCanonicalize_QuotedNullIsAString(t *testing.T) {
+	got, err := CanonicalizeScalar(json.RawMessage(`"null"`), DataTypeString)
+	require.NoError(t, err)
+	assert.Equal(t, "null", got)
+}
