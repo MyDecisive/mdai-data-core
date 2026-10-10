@@ -2,10 +2,12 @@ package kubetest
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/mydecisive/mdai-data-core/kube"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -13,6 +15,8 @@ var _ kube.HubConfigMapStore = (*FakeConfigMapStore)(nil)
 
 // FakeConfigMapStore is a threadsafe in-memory implementation of kube.ConfigMapStore.
 // It avoids client-go informers and lets tests seed & assert data deterministically.
+// Like the real controller, it copies maps and ConfigMaps on the way in and out, so neither
+// the test nor the code under test can change the store's state through a shared reference.
 type FakeConfigMapStore struct {
 	mu sync.RWMutex
 
@@ -54,7 +58,7 @@ func (f *FakeConfigMapStore) SeedConfigMap(hubName, cmName, cmType string, data 
 				kube.ConfigMapTypeLabel: cmType,
 			},
 		},
-		Data: data,
+		Data: maps.Clone(data),
 	}
 	f.byHub[hubName] = append(f.byHub[hubName], cm)
 	f.allCMs[cmName] = cm
@@ -66,6 +70,7 @@ func (f *FakeConfigMapStore) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.byHub = make(map[string][]*v1.ConfigMap)
+	f.allCMs = make(map[string]*v1.ConfigMap)
 	f.running = false
 	f.stopped = false
 	f.RunErr = nil
@@ -106,7 +111,7 @@ func (f *FakeConfigMapStore) GetAllHubsToDataMap() (map[string]map[string]string
 			continue
 		}
 		// keep parity with controller: last wins
-		out[hub] = cms[len(cms)-1].Data
+		out[hub] = maps.Clone(cms[len(cms)-1].Data)
 	}
 	return out, nil
 }
@@ -127,7 +132,7 @@ func (f *FakeConfigMapStore) getAllHubsToDataMapByType(configMapType string) (ma
 			if _, exists := out[hub]; exists {
 				return nil, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hub, configMapType)
 			}
-			out[hub] = cm.Data
+			out[hub] = maps.Clone(cm.Data)
 		}
 	}
 	return out, nil
@@ -145,14 +150,21 @@ func (f *FakeConfigMapStore) GetAllHubsVariablesSchemaConfigMapData() (map[strin
 	return f.getAllHubsToDataMapByType(kube.VariablesSchemaMapType)
 }
 
-func (f *FakeConfigMapStore) GetConfigmapByNameAndNamespace(name, _ string) (*v1.ConfigMap, error) {
+// GetConfigmapByNameAndNamespace returns a copy of the named ConfigMap. Like the real controller,
+// it returns an error satisfying apierrors.IsNotFound when there is none. The namespace is only
+// used in the error message: seeded ConfigMaps have no namespace, so lookups match by name.
+func (f *FakeConfigMapStore) GetConfigmapByNameAndNamespace(name, namespace string) (*v1.ConfigMap, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if f.GetConfigMapByHubNameErr != nil {
-		return nil, f.GetConfigMapByHubNameErr
+	if f.GetConfigMapByNameErr != nil {
+		return nil, f.GetConfigMapByNameErr
 	}
 
-	return f.allCMs[name], nil
+	cm, ok := f.allCMs[name]
+	if !ok {
+		return nil, fmt.Errorf("failed to get configmap %s/%s: %w", namespace, name, apierrors.NewNotFound(v1.Resource("configmap"), name))
+	}
+	return cm.DeepCopy(), nil
 }
 
 func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMap, error) {
@@ -167,7 +179,7 @@ func (f *FakeConfigMapStore) GetConfigMapByHubName(hubName string) (*v1.ConfigMa
 	case 0:
 		return nil, fmt.Errorf("no ConfigMap found for hub: %s", hubName)
 	case 1:
-		return configMaps[0], nil
+		return configMaps[0].DeepCopy(), nil
 	default:
 		names := make([]string, len(configMaps))
 		for i, cm := range configMaps {
@@ -195,7 +207,7 @@ func (f *FakeConfigMapStore) getConfigMapDataByHubNameAndType(hubName string, co
 	case 0:
 		return nil, false, nil
 	case 1:
-		return matches[0].Data, true, nil
+		return maps.Clone(matches[0].Data), true, nil
 	default:
 		return nil, true, fmt.Errorf("multiple ConfigMaps found for the same hub and type: %s, %s", hubName, configMapType)
 	}
@@ -241,6 +253,12 @@ func (f *FakeConfigMapStore) FailGetByHubWith(err error) *FakeConfigMapStore {
 	return f
 }
 
+// FailGetByNameWith makes GetConfigmapByNameAndNamespace return err.
+func (f *FakeConfigMapStore) FailGetByNameWith(err error) *FakeConfigMapStore {
+	f.GetConfigMapByNameErr = err
+	return f
+}
+
 func (f *FakeConfigMapStore) FailGetByHubAndTypeWith(err error) *FakeConfigMapStore {
 	f.GetConfigMapByHubAndTypeErr = err
 	return f
@@ -250,11 +268,16 @@ func (f *FakeConfigMapStore) SeedHub(hubName string, data map[string]string) *Fa
 	return f.SeedConfigMap(hubName, hubName+"-cm", kube.EnvConfigMapType, data)
 }
 
+// SetHubConfigMaps replaces the hub's ConfigMaps with copies of cms.
 func (f *FakeConfigMapStore) SetHubConfigMaps(hubName string, cms []*v1.ConfigMap) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.byHub == nil {
 		f.byHub = make(map[string][]*v1.ConfigMap)
 	}
-	f.byHub[hubName] = cms
+	copies := make([]*v1.ConfigMap, len(cms))
+	for i, cm := range cms {
+		copies[i] = cm.DeepCopy()
+	}
+	f.byHub[hubName] = copies
 }

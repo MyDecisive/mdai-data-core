@@ -2,8 +2,10 @@ package kube
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -839,4 +841,203 @@ func TestBuildLabelSelector(t *testing.T) {
 		assert.False(t, selector.Matches(labels.Set{ConfigMapTypeLabel: AutomationConfigMapType}))
 		assert.False(t, selector.Matches(labels.Set{}))
 	})
+}
+
+func TestByTypeIndex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("labeled configmap indexes under its type", func(t *testing.T) {
+		t.Parallel()
+
+		cm := newTestConfigMap("mdaihub-first-variables", "first", "mdaihub-first", EnvConfigMapType, nil)
+
+		keys, err := byTypeIndex(zap.NewNop(), cm)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{EnvConfigMapType}, keys)
+	})
+
+	t.Run("missing type label indexes under no key without error", func(t *testing.T) {
+		t.Parallel()
+
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "untyped"}}
+
+		keys, err := byTypeIndex(zap.NewNop(), cm)
+
+		require.NoError(t, err)
+		require.Empty(t, keys)
+	})
+
+	t.Run("non-configmap object indexes under no key without error", func(t *testing.T) {
+		t.Parallel()
+
+		keys, err := byTypeIndex(zap.NewNop(), &corev1.Secret{})
+
+		require.NoError(t, err)
+		require.Empty(t, keys)
+	})
+}
+
+func TestHubConfigMapController_ReturnsCopies(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hubName   = "mdaihub-first"
+		namespace = "first"
+	)
+	original := map[string]string{"service_list": "a,b"}
+	controller := newStartedHubController(t, []string{EnvConfigMapType}, namespace,
+		newTestConfigMap("mdaihub-first-variables", namespace, hubName, EnvConfigMapType, maps.Clone(original)))
+
+	requireEventually(t, func(c *assert.CollectT) {
+		data, found, err := controller.GetEnvConfigMapDataByHubName(hubName)
+		assert.NoError(c, err)
+		assert.True(c, found)
+		assert.Equal(c, original, data)
+	})
+
+	// Modify everything the getters return.
+	allHubs, err := controller.GetAllHubsToDataMap()
+	require.NoError(t, err)
+	allHubs[hubName]["injected"] = "all-hubs"
+
+	allEnv, err := controller.GetAllHubsEnvConfigMapData()
+	require.NoError(t, err)
+	allEnv[hubName]["injected"] = "all-env"
+
+	envData, _, err := controller.GetEnvConfigMapDataByHubName(hubName)
+	require.NoError(t, err)
+	envData["injected"] = "by-hub"
+
+	cm, err := controller.GetConfigMapByHubName(hubName)
+	require.NoError(t, err)
+	cm.Data["injected"] = "configmap"
+	cm.Labels[LabelMdaiHubName] = "other-hub"
+
+	// The cache must be unchanged.
+	gotEnv, found, err := controller.GetEnvConfigMapDataByHubName(hubName)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, original, gotEnv)
+
+	gotAll, err := controller.GetAllHubsEnvConfigMapData()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]map[string]string{hubName: original}, gotAll)
+
+	gotCM, err := controller.GetConfigMapByHubName(hubName)
+	require.NoError(t, err, "the hub label in the cache must be unchanged")
+	assert.Equal(t, original, gotCM.Data)
+}
+
+// runStopper is the lifecycle shared by the informer-backed controllers.
+type runStopper interface {
+	Run() error
+	Stop()
+}
+
+func TestControllers_StopIsSafe(t *testing.T) {
+	t.Parallel()
+
+	controllers := []struct {
+		name string
+		new  func() (runStopper, error)
+	}{
+		{
+			name: "HubConfigMapController",
+			new: func() (runStopper, error) {
+				return NewHubConfigMapController([]string{EnvConfigMapType}, "first", fake.NewClientset(), zap.NewNop())
+			},
+		},
+		{
+			name: "ConfigMapController",
+			new: func() (runStopper, error) {
+				return NewConfigMapController([]string{OctantConnectionsConfigMapType}, "first", fake.NewClientset(), zap.NewNop())
+			},
+		},
+		{
+			name: "SecretController",
+			new: func() (runStopper, error) {
+				return NewSecretController([]string{OctantIntegrationArgoType}, "first", fake.NewClientset(), zap.NewNop())
+			},
+		},
+	}
+
+	for _, tc := range controllers {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("before Run", func(t *testing.T) {
+				c, err := tc.new()
+				require.NoError(t, err)
+				assert.NotPanics(t, c.Stop)
+			})
+
+			t.Run("twice after Run", func(t *testing.T) {
+				c, err := tc.new()
+				require.NoError(t, err)
+				require.NoError(t, c.Run())
+				assert.NotPanics(t, c.Stop)
+				assert.NotPanics(t, c.Stop)
+			})
+
+			t.Run("Run again while running", func(t *testing.T) {
+				c, err := tc.new()
+				require.NoError(t, err)
+				require.NoError(t, c.Run())
+				require.NoError(t, c.Run(), "a second Run reuses the running informer")
+				assert.NotPanics(t, c.Stop)
+			})
+
+			t.Run("concurrent Stop", func(t *testing.T) {
+				c, err := tc.new()
+				require.NoError(t, err)
+				require.NoError(t, c.Run())
+
+				// Without the mutex, two goroutines could both see an open channel and close
+				// it twice, which panics; the race detector also checks the shared field.
+				const stoppers = 10
+				var wg sync.WaitGroup
+				start := make(chan struct{})
+				for range stoppers {
+					wg.Go(func() {
+						<-start
+						c.Stop()
+					})
+				}
+				close(start)
+				wg.Wait()
+			})
+		})
+	}
+}
+
+func TestInformerLifecycle(t *testing.T) {
+	t.Parallel()
+
+	isClosed := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}
+
+	var l informerLifecycle
+
+	assert.NotPanics(t, l.stop, "stop before start does nothing")
+
+	first := l.start()
+	assert.False(t, isClosed(first))
+	assert.Equal(t, first, l.start(), "start while running returns the same channel")
+
+	l.stop()
+	assert.True(t, isClosed(first), "stop closes the channel")
+	assert.NotPanics(t, l.stop, "a second stop does nothing")
+
+	second := l.start()
+	assert.NotEqual(t, first, second, "start after stop creates a new channel")
+	assert.False(t, isClosed(second))
+	l.stop()
+	assert.True(t, isClosed(second))
 }

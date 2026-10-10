@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -186,4 +187,18 @@ func TestConfigMapController_UpdateConfigMap(t *testing.T) {
 		require.Len(t, theCM.Data, 2)
 		assert.Contains(t, theCM.Data, "second_manual_variable")
 	})
+}
+
+func TestConfigMapController_GetConfigmapByNameAndNamespace_NotFound(t *testing.T) {
+	t.Parallel()
+
+	controller, _ := newStartedConfmapController(t, []string{OctantConnectionsConfigMapType}, "first")
+
+	cm, err := controller.GetConfigmapByNameAndNamespace("missing", "first")
+
+	require.Error(t, err)
+	// kubetest.FakeConfigMapStore returns the same error; keep them in sync.
+	assert.True(t, apierrors.IsNotFound(err))
+	assert.EqualError(t, err, `failed to get configmap first/missing: configmap "missing" not found`)
+	assert.Nil(t, cm)
 }
