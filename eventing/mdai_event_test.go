@@ -56,3 +56,34 @@ func TestManualVariablesActionPayload_JSONMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, payload, decoded)
 }
+
+func TestVariablesActionPayload_JSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload VariablesActionPayload
+		want    string
+	}{
+		{
+			name:    "field omitted when empty",
+			payload: VariablesActionPayload{VariableRef: "v", DataType: "set", Operation: "added", Data: "blue"},
+			want:    `{"variableRef":"v","dataType":"set","operation":"added","data":"blue"}`,
+		},
+		{
+			name:    "map entry includes field",
+			payload: VariablesActionPayload{VariableRef: "v", DataType: "map", Operation: "set", Field: "color", Data: "blue"},
+			want:    `{"variableRef":"v","dataType":"map","operation":"set","field":"color","data":"blue"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := json.Marshal(tt.payload)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(got))
+			assert.Equal(t, tt.want, string(got), "field order is part of the wire format")
+
+			var back VariablesActionPayload
+			require.NoError(t, json.Unmarshal(got, &back))
+			assert.Equal(t, tt.payload, back)
+		})
+	}
+}

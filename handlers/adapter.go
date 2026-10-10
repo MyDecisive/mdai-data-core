@@ -44,7 +44,19 @@ type HandlerAdapter struct {
 }
 
 // NewHandlerAdapter creates a new wrapper for handling variable operations.
+// The audit stream retention comes from audit.StreamRetentionFromEnv, the same setting the
+// audit adapter uses, so both trim the shared stream to the same window. If that setting is
+// invalid, it logs an error and uses the 30-day default. A variables.WithValkeyAuditStreamExpiry
+// option overrides it.
 func NewHandlerAdapter(client valkey.Client, logger *zap.Logger, pub publisher.Publisher, opts ...variables.ValkeyAdapterOption) *HandlerAdapter {
+	retention, err := audit.StreamRetentionFromEnv(logger)
+	if err != nil {
+		retention = audit.DefaultStreamRetention
+		logger.Error("Invalid Valkey stream retention; using default",
+			zap.Duration("retention", retention), zap.Error(err))
+	}
+	// The env-derived retention goes first so explicit options take precedence.
+	opts = append([]variables.ValkeyAdapterOption{variables.WithValkeyAuditStreamExpiry(retention)}, opts...)
 	va := variables.NewValkeyAdapter(client, logger, opts...)
 
 	ha := &HandlerAdapter{
@@ -63,9 +75,8 @@ func (r *HandlerAdapter) AddElementToSet(ctx context.Context, variableKey string
 	variableUpdateCommand := r.valkeyAdapter.AddElementToSet(variableKey, hubName, value)
 
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Add element to set")
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        variables.DataTypeSet,
@@ -82,9 +93,8 @@ func (r *HandlerAdapter) RemoveElementFromSet(ctx context.Context, variableKey s
 	variableUpdateCommand := r.valkeyAdapter.RemoveElementFromSet(variableKey, hubName, value)
 
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Remove element from set")
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        variables.DataTypeSet,
@@ -104,13 +114,14 @@ func (r *HandlerAdapter) SetMapEntry(ctx context.Context, variableKey string, hu
 	variableUpdateCommand := r.valkeyAdapter.SetMapEntry(variableKey, hubName, field, value)
 
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, "Set map entry")
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
+	auditEntry.Field = field
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        variables.DataTypeMap,
 		Action:         actionSet,
+		Field:          field,
 		Data:           value,
 		CorrelationID:  correlationId,
 		Source:         source,
@@ -123,14 +134,15 @@ func (r *HandlerAdapter) SetMapEntry(ctx context.Context, variableKey string, hu
 func (r *HandlerAdapter) RemoveMapEntry(ctx context.Context, variableKey string, hubName string, field string, correlationId string, recursionDepth int) error {
 	variableUpdateCommand := r.valkeyAdapter.RemoveMapEntry(variableKey, hubName, field)
 
-	auditEntry := makeAuditEntry(variableKey, field, correlationId, "Remove element from set")
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
+	auditEntry := makeAuditEntry(variableKey, field, correlationId, "Remove map entry")
+	auditEntry.Field = field
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        variables.DataTypeMap,
 		Action:         actionRemoved,
+		Field:          field,
 		Data:           field,
 		CorrelationID:  correlationId,
 		Source:         source,
@@ -156,9 +168,8 @@ func (r *HandlerAdapter) SetScalarValue(ctx context.Context, variableKey string,
 	variableUpdateCommand := r.valkeyAdapter.SetString(variableKey, hubName, value)
 
 	auditEntry := makeAuditEntry(variableKey, value, correlationId, fmt.Sprintf("Set %s value", dataType))
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        dataType,
@@ -189,9 +200,8 @@ func (r *HandlerAdapter) DeleteScalarValue(ctx context.Context, variableKey stri
 	variableUpdateCommand := r.valkeyAdapter.DeleteString(variableKey, hubName)
 
 	auditEntry := makeAuditEntry(variableKey, "", correlationId, fmt.Sprintf("Delete %s value", dataType))
-	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
-	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditLogCommand, PublishVarUpdateParams{
+	return r.applyAndPublish(ctx, variableKey, variableUpdateCommand, auditEntry, PublishVarUpdateParams{
 		Hub:            hubName,
 		VarName:        variableKey,
 		VarType:        dataType,
@@ -218,17 +228,23 @@ func requireScalar(dataType variables.DataType) error {
 // The event is built once, before Valkey is touched, so an invalid event fails without
 // side effects and every publish attempt carries the same event ID (sent as Nats-Msg-Id).
 // That lets JetStream deduplicate a retry of a publish the server had already stored.
+// The audit entry records the same event ID, hub and recursion depth as the event.
 func (r *HandlerAdapter) applyAndPublish(
 	ctx context.Context,
 	variableKey string,
 	variableUpdateCommand valkey.Completed,
-	auditLogCommand valkey.Completed,
+	auditEntry StoreVariableAction,
 	params PublishVarUpdateParams,
 ) error {
 	event, subject, err := buildVarUpdate(params)
 	if err != nil {
 		return err
 	}
+
+	auditEntry.EventId = event.ID
+	auditEntry.HubName = params.Hub
+	auditEntry.RecursionDepth = params.RecursionDepth
+	auditLogCommand := r.makeVariableAuditLogActionCommand(auditEntry)
 
 	if err := r.executeAuditedUpdateCommand(ctx, variableKey, variableUpdateCommand, auditLogCommand); err != nil {
 		return err
@@ -301,7 +317,8 @@ type PublishVarUpdateParams struct {
 	VarName        string
 	VarType        variables.DataType
 	Action         string // "added" | "removed" | "set"
-	Data           any    // value or {"field":..., "value":...} or {"field":...} for remove
+	Field          string // map field for map entry updates; empty otherwise
+	Data           any    // the value; for a map entry removal, the removed field
 	CorrelationID  string
 	Source         string // e.g. "eventhub" or your worker name
 	RecursionDepth int
@@ -322,6 +339,7 @@ func buildVarUpdate(params PublishVarUpdateParams) (eventing.MdaiEvent, eventing
 		VariableRef: params.VarName,
 		DataType:    string(params.VarType),
 		Operation:   params.Action,
+		Field:       params.Field,
 		Data:        params.Data,
 	}
 	plb, err := json.Marshal(pl)
@@ -349,9 +367,10 @@ func buildVarUpdate(params PublishVarUpdateParams) (eventing.MdaiEvent, eventing
 	return ev, subj, nil
 }
 
+// makeAuditEntry returns the audit entry for a mutation. applyAndPublish fills in the event ID,
+// hub name and recursion depth from the published event.
 func makeAuditEntry(variableKey string, value string, correlationId string, operation string) StoreVariableAction {
 	auditAction := StoreVariableAction{
-		EventId:       time.Now().String(),
 		Operation:     operation,
 		Target:        variableKey,
 		VariableRef:   value,
@@ -368,13 +387,15 @@ func (r *HandlerAdapter) makeVariableAuditLogActionCommand(action StoreVariableA
 		Build()
 }
 
+// StoreVariableAction is the audit stream entry written for a variable mutation.
 type StoreVariableAction struct {
 	HubName        string `json:"hub_name"`
-	EventId        string `json:"event_id"`
+	EventId        string `json:"event_id"` // ID of the published variable-update event
 	Operation      string `json:"operation"`
 	Target         string `json:"target"`
 	VariableRef    string `json:"variable_ref"`
 	Variable       string `json:"variable"`
+	Field          string `json:"field,omitempty"` // map field for map entry updates
 	CorrelationId  string `json:"correlation_id"`
 	RecursionDepth int    `json:"recursion_depth"`
 }
@@ -389,6 +410,7 @@ func (action StoreVariableAction) ToSequence() iter.Seq2[string, string] {
 			"target":          action.Target,
 			"variable_ref":    action.VariableRef,
 			"variable":        action.Variable,
+			"field":           action.Field,
 			"correlation_id":  action.CorrelationId,
 			"recursion_depth": strconv.Itoa(action.RecursionDepth),
 		}

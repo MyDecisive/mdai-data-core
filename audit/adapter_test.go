@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	vmock "github.com/valkey-io/valkey-go/mock"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 )
 
@@ -146,4 +148,62 @@ func TestNewAuditAdapter_InvalidRetentionFallsBackToDefault(t *testing.T) {
 	adapter := NewAuditAdapter(zap.NewNop(), nil)
 	require.NotNil(t, adapter)
 	assert.Equal(t, 30*24*time.Hour, adapter.valkeyAuditStreamExpiry)
+}
+
+func TestCreateRestartEvent_ReservedKeysWin(t *testing.T) {
+	adapter := &AuditAdapter{logger: zap.NewNop()}
+
+	got := adapter.CreateRestartEvent("my-hub", map[string]string{
+		"SERVICE_LIST_CSV": "a,b",
+		"hub_name":         "other-hub",
+		"type":             "something_else",
+		"timestamp":        "not-a-timestamp",
+	})
+
+	assert.Equal(t, "my-hub", got["hub_name"])
+	assert.Equal(t, CollectorRestart, got["type"])
+	_, err := time.Parse(time.RFC3339, got["timestamp"])
+	require.NoError(t, err, "timestamp should be set by CreateRestartEvent")
+	assert.Equal(t, "a,b", got["SERVICE_LIST_CSV"], "other env entries are kept")
+}
+
+func TestHandleEventsGetN(t *testing.T) {
+	t.Run("limits the read with COUNT", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		client := vmock.NewClient(ctrl)
+		adapter := &AuditAdapter{logger: zap.NewNop(), valkeyClient: client}
+
+		client.EXPECT().
+			Do(gomock.Any(), vmock.Match("XREVRANGE", MdaiHubEventHistoryStreamName, "+", "-", "COUNT", "5")).
+			Return(vmock.Result(vmock.ValkeyArray()))
+
+		entries, err := adapter.HandleEventsGetN(t.Context(), 5)
+		require.NoError(t, err)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("rejects a non-positive count", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		adapter := &AuditAdapter{logger: zap.NewNop(), valkeyClient: vmock.NewClient(ctrl)}
+		// No Do expectation: the client must not be called.
+
+		for _, count := range []int64{0, -1} {
+			_, err := adapter.HandleEventsGetN(t.Context(), count)
+			require.Error(t, err)
+		}
+	})
+}
+
+func TestHandleEventsGet_ReadsWholeStream(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := vmock.NewClient(ctrl)
+	adapter := &AuditAdapter{logger: zap.NewNop(), valkeyClient: client}
+
+	client.EXPECT().
+		Do(gomock.Any(), vmock.Match("XREVRANGE", MdaiHubEventHistoryStreamName, "+", "-")).
+		Return(vmock.Result(vmock.ValkeyArray()))
+
+	entries, err := adapter.HandleEventsGet(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, entries)
 }

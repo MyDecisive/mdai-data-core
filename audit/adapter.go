@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"maps"
 	"os"
 	"regexp"
 	"strconv"
@@ -39,7 +40,9 @@ const (
 
 	envRetention      = "VALKEY_AUDIT_STREAM_RETENTION" // e.g. "30d", "72h", "2592000000ms"
 	envRetentionMsOld = "VALKEY_AUDIT_STREAM_EXPIRY_MS" // deprecated
-	defaultRetention  = 30 * 24 * time.Hour
+
+	// DefaultStreamRetention is the audit stream retention used when no retention is configured.
+	DefaultStreamRetention = 30 * 24 * time.Hour
 )
 
 type AuditAdapter struct {
@@ -58,11 +61,11 @@ func NewAuditAdapter(
 	adapter, err := NewAuditAdapterE(logger, valkeyClient)
 	if err != nil {
 		logger.Error("Invalid Valkey stream retention; using default",
-			zap.Duration("retention", defaultRetention), zap.Error(err))
+			zap.Duration("retention", DefaultStreamRetention), zap.Error(err))
 		return &AuditAdapter{
 			logger:                  logger,
 			valkeyClient:            valkeyClient,
-			valkeyAuditStreamExpiry: defaultRetention,
+			valkeyAuditStreamExpiry: DefaultStreamRetention,
 		}
 	}
 	return adapter
@@ -85,8 +88,23 @@ func NewAuditAdapterE(
 	}, nil
 }
 
+// HandleEventsGet returns every entry in the audit stream, newest first.
+// For large streams, prefer HandleEventsGetN.
 func (c *AuditAdapter) HandleEventsGet(ctx context.Context) ([]map[string]any, error) {
-	result := c.valkeyClient.Do(ctx, c.valkeyClient.B().Xrevrange().Key(MdaiHubEventHistoryStreamName).End("+").Start("-").Build())
+	return c.readEvents(ctx, c.valkeyClient.B().Xrevrange().Key(MdaiHubEventHistoryStreamName).End("+").Start("-").Build())
+}
+
+// HandleEventsGetN returns at most count of the newest audit stream entries, newest first.
+// count must be positive.
+func (c *AuditAdapter) HandleEventsGetN(ctx context.Context, count int64) ([]map[string]any, error) {
+	if count <= 0 {
+		return nil, fmt.Errorf("count must be positive, got %d", count)
+	}
+	return c.readEvents(ctx, c.valkeyClient.B().Xrevrange().Key(MdaiHubEventHistoryStreamName).End("+").Start("-").Count(count).Build())
+}
+
+func (c *AuditAdapter) readEvents(ctx context.Context, cmd valkey.Completed) ([]map[string]any, error) {
+	result := c.valkeyClient.Do(ctx, cmd)
 	if err := result.Error(); err != nil {
 		return nil, err
 	}
@@ -236,15 +254,15 @@ func (c *AuditAdapter) CreateHubEvent(relevantLabels []string, alert template.Al
 	return mdaiHubEvent
 }
 
+// CreateRestartEvent returns a collector-restart audit entry for the hub, including envMap.
+// The timestamp, hub_name and type keys are always set by this function; entries in envMap
+// with those keys are ignored.
 func (c *AuditAdapter) CreateRestartEvent(mdaiCRName string, envMap map[string]string) map[string]string {
-	mdaiHubEvent := map[string]string{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"hub_name":  mdaiCRName,
-		"type":      CollectorRestart,
-	}
-	for key, value := range envMap {
-		mdaiHubEvent[key] = value
-	}
+	mdaiHubEvent := map[string]string{}
+	maps.Copy(mdaiHubEvent, envMap)
+	mdaiHubEvent["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	mdaiHubEvent["hub_name"] = mdaiCRName
+	mdaiHubEvent["type"] = CollectorRestart
 	return mdaiHubEvent
 }
 
@@ -284,8 +302,8 @@ func StreamRetentionFromEnv(logger *zap.Logger) (time.Duration, error) {
 		return d, nil
 	}
 
-	logger.Info("Using default Valkey stream retention", zap.Duration("retention", defaultRetention))
-	return defaultRetention, nil
+	logger.Info("Using default Valkey stream retention", zap.Duration("retention", DefaultStreamRetention))
+	return DefaultStreamRetention, nil
 }
 
 // parseHumanDuration accepts native Go durations ("72h", "90m", "100ms")

@@ -201,7 +201,8 @@ func TestGetOrCreateMetaPriorityList(t *testing.T) {
 	refs := []string{"ref1", "ref2"}
 	hubKey := "variable/hub/"
 	key := hubKey + varKey
-	r1, r2 := hubKey+refs[0], hubKey+refs[1]
+	r1 := hubKey + refs[0]
+	r2 := hubKey + refs[1]
 
 	client.
 		EXPECT().
@@ -239,7 +240,10 @@ func TestGetMetaPriorityList(t *testing.T) {
 
 	varKey := "parent"
 	key := "variable/hub/" + varKey
-	r1, r2 := "variable/hub/ref1", "variable/hub/ref2"
+	const (
+		r1 = "variable/hub/ref1"
+		r2 = "variable/hub/ref2"
+	)
 
 	client.
 		EXPECT().
