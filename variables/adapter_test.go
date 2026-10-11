@@ -360,3 +360,75 @@ func TestWithValkeyAuditStreamExpiryOption(t *testing.T) {
 	)
 	assert.Equal(t, customTTL, a2.valkeyAuditStreamExpiry)
 }
+
+func TestYAMLValue(t *testing.T) {
+	numbers := map[string]any{
+		"1":                    int64(1),
+		"-42":                  int64(-42),
+		"0":                    int64(0),
+		"9223372036854775807":  int64(9223372036854775807),
+		"-9223372036854775808": int64(-9223372036854775808),
+		"3.14":                 3.14,
+		"-0.5":                 -0.5,
+		"1500000.5":            1500000.5,
+		"0.00001":              0.00001,
+		"1e-05":                0.00001,
+	}
+	for in, want := range numbers {
+		assert.Equal(t, want, yamlValue(in), "yamlValue(%q)", in)
+	}
+
+	// Anything that would not format back to the same text stays a string, unchanged.
+	unchanged := []string{
+		"", "two", "007", "+1", "1.50", ".5", "5.", "1e3", "1E-05",
+		"NaN", "nan", "Inf", "+Inf", "-Inf", "Infinity", "inf",
+		"0x1F", "0x1p-2", "1_000",
+		"12345678901234567890", // too large for int64
+		" 1", "1 ",
+		// Integer text that doesn't fit in int64 must not fall back to float, even when the
+		// float formats back to the same digits.
+		"100000000000000000000", "-100000000000000000000", "9223372036854775808",
+		"-0", "+0", "--1", "+-1",
+	}
+	for _, in := range unchanged {
+		assert.Equal(t, in, yamlValue(in), "yamlValue(%q)", in)
+	}
+}
+
+func TestGetMapAsString_KeepsNonCanonicalNumbersAsStrings(t *testing.T) {
+	adapter, client, ctx, ctrl := newAdapterWithMock(t)
+	defer ctrl.Finish()
+
+	const key = "variable/hub/myhash"
+	values := map[string]string{
+		"zip":   "007",
+		"ratio": "NaN",
+		"count": "1e3",
+		"big":   "12345678901234567890",
+		"huge":  "100000000000000000000", // fits a float exactly, but must not become 1e+20
+		"port":  "8080",
+	}
+
+	stored := map[string]valkey.ValkeyMessage{}
+	for k, v := range values {
+		stored[k] = vmock.ValkeyBlobString(v)
+	}
+	client.EXPECT().
+		Do(ctx, vmock.Match("HGETALL", key)).
+		Return(vmock.Result(vmock.ValkeyMap(stored)))
+
+	out, err := adapter.GetMapAsString(ctx, "myhash", "hub")
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(out), &got))
+	assert.Equal(t, map[string]any{
+		"zip":   "007",
+		"ratio": "NaN",
+		"count": "1e3",
+		"big":   "12345678901234567890",
+		"huge":  "100000000000000000000",
+		"port":  8080,
+	}, got, "YAML output:\n%s", out)
+	assert.NotContains(t, out, "1e+20")
+}

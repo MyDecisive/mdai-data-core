@@ -307,3 +307,26 @@ func TestCanonicalizeSet_RejectsNullElementsViaResolve(t *testing.T) {
 	_, err := Resolve(context.Background(), reader, "h", "v", DataTypeSet, json.RawMessage(`["a", null]`))
 	require.ErrorIs(t, err, ErrInvalidDefault)
 }
+
+func TestResolve_NullDefaultMeansNoDefault(t *testing.T) {
+	// A json.RawMessage field decoded from `"default": null` holds the bytes null, not nil.
+	for _, raw := range []string{`null`, ` null `} {
+		for _, dataType := range []DataType{
+			DataTypeString, DataTypeInt, DataTypeFloat, DataTypeBoolean, DataTypeSet, DataTypeMap,
+		} {
+			got, err := Resolve(context.Background(), newFakeReader(), "h", "v", dataType, json.RawMessage(raw))
+			require.NoError(t, err, "%s, raw %q", dataType, raw)
+			assert.Equal(t, ResolveResult{DataType: dataType}, got, "%s, raw %q", dataType, raw)
+		}
+	}
+}
+
+func TestResolve_NullDefaultDoesNotHideStoredValue(t *testing.T) {
+	reader := newFakeReader()
+	reader.str["h:v"] = "stored"
+	reader.strOK["h:v"] = true
+
+	got, err := Resolve(context.Background(), reader, "h", "v", DataTypeString, json.RawMessage(`null`))
+	require.NoError(t, err)
+	assert.Equal(t, ResolveResult{Value: "stored", Found: true, DataType: DataTypeString}, got)
+}
