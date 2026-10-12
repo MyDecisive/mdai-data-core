@@ -275,7 +275,7 @@ func TestDuplicateSuppression(t *testing.T) {
 	// Subscriber records each delivery
 	sub, err := subscriber.NewSubscriber(context.Background(), logger, "test")
 	require.NoError(t, err)
-	err = sub.Subscribe(t.Context(), eventing.AlertConsumerGroupName.String(), "alerts", func(ev eventing.MdaiEvent) error {
+	err = sub.Subscribe(t.Context(), eventing.AlertConsumerGroupName.String(), "alert", func(ev eventing.MdaiEvent) error {
 		mu.Lock()
 		defer mu.Unlock()
 		if ev.ID == "sentinel" {

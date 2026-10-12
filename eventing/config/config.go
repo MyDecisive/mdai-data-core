@@ -314,6 +314,16 @@ func EnsurePCGroup(ctx context.Context, js jetstream.JetStream, cfg Config) erro
 	return nil
 }
 
+// DLQTopics returns the topics that have a dead-letter subject in the stream: a subscriber's
+// dlqSubject must be one of them, so that <prefix>.<topic>.dlq is covered by EnsureStream.
+func DLQTopics() []string {
+	topics := make([]string, 0, len(everySubjectConfig))
+	for _, subjectConfig := range everySubjectConfig {
+		topics = append(topics, subjectConfig.Topic.String())
+	}
+	return topics
+}
+
 // EnsureStream ensures that the specified stream exists with the given subjects.
 // It will update the stream if necessary only when new subject was added.
 func EnsureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error {
