@@ -7,20 +7,21 @@ import (
 // VariableCtx represents contextual information for variable-related events. It's used in matching rules.
 type VariableCtx struct {
 	Name       string `json:"name"`            // variable key
-	UpdateType string `json:"update_type"`     // "added" | "removed" | "changed"
+	UpdateType string `json:"update_type"`     // "added" | "removed" | "set", the operation from the variable-update event
 	Value      string `json:"value,omitempty"` // current value if applicable
 }
 
 // VariableTrigger matches events based on variable name and update type.
 type VariableTrigger struct {
-	Name string `json:"name,omitempty"` // exact; "" = any
-	// TODO add UpdateType to CRD
-	UpdateType string `json:"update_type,omitempty"` // "added", "removed", "changed"
+	// Name is required by Match and compared exactly; empty names do not match.
+	Name string `json:"name,omitempty"`
+	// UpdateType is optional ("added", "removed" or "set"); when empty, any update type matches.
+	UpdateType string `json:"update_type,omitempty"`
 }
 
 // Match checks if the trigger matches the given context.
 func (t *VariableTrigger) Match(ctx Context) bool {
-	// Variable Name is required
+	// Variable Name is required; reject empty triggers
 	if t.Name == "" {
 		return false
 	}

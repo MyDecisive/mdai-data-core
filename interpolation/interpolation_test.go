@@ -387,6 +387,33 @@ func TestEngine_TemplateScope_EmptyStringFallsBackToDefault(t *testing.T) {
 	assert.Equal(t, "fallback", got)
 }
 
+func TestEngine_EmptyDefaultSubstitutesEmptyString(t *testing.T) {
+	engine := NewEngine(zap.NewNop())
+
+	event := &eventing.MdaiEvent{Payload: `{"present":"v"}`}
+	tpl := map[string]string{"empty": ""}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"missing payload field", "tag=[${trigger:payload.tag:-}]", "tag=[]"},
+		{"empty event field", "name=[${trigger:name:-}]", "name=[]"},
+		{"empty template value", "x=[${template:empty:-}]", "x=[]"},
+		{"missing template key", "x=[${template:missing:-}]", "x=[]"},
+		{"present value ignores empty default", "p=${trigger:payload.present:-}", "p=v"},
+		{"no default leaves expression", "x=${template:missing}", "x=${template:missing}"},
+		{"unsupported scope leaves expression", "x=${env:HOME:-}", "x=${env:HOME:-}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, engine.InterpolateWithValues(tt.input, event, tpl))
+		})
+	}
+}
+
 func TestEngine_TriggerAndTemplate_Together(t *testing.T) {
 	engine := NewEngine(zap.NewNop())
 

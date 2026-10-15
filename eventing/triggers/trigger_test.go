@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildTrigger_AlertOK(t *testing.T) {
@@ -60,4 +61,40 @@ func TestBuildTrigger_BadEnvelope(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, got)
 	assert.Contains(t, err.Error(), "trigger envelope")
+}
+
+func TestBuildTrigger_StrictEnvelope(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{"unknown envelope field", `{"kind":"alert","spec":{"name":"x"},"bogus":1}`, `unknown field "bogus"`},
+		{"misspelled kind", `{"kinds":"alert","spec":{"name":"x"}}`, `unknown field "kinds"`},
+		{"misspelled spec", `{"kind":"alert","specs":{"name":"x"}}`, `unknown field "specs"`},
+		{"missing kind", `{"spec":{"name":"x"}}`, "trigger envelope: missing kind"},
+		{"empty kind", `{"kind":"","spec":{"name":"x"}}`, "trigger envelope: missing kind"},
+		{"missing spec", `{"kind":"alert"}`, `trigger envelope: missing spec for kind "alert"`},
+		{"null spec", `{"kind":"variable","spec":null}`, `trigger envelope: missing spec for kind "variable"`},
+		{"empty input", ``, "trigger envelope: missing trigger"},
+		{"null input", `null`, "trigger envelope: missing kind"},
+		{"trailing data after envelope", `{"kind":"alert","spec":{"name":"x"}} {}`, "trigger envelope: unexpected data after JSON value"},
+		{"spec not an object", `{"kind":"alert","spec":"x"}`, "alert spec"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := BuildTrigger(json.RawMessage(tc.raw))
+			require.Error(t, err)
+			assert.Nil(t, got)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestBuildTrigger_EmptySpecObjectAccepted(t *testing.T) {
+	// An empty spec object is well-formed; Match rejects the empty name at runtime.
+	got, err := BuildTrigger(json.RawMessage(`{"kind":"alert","spec":{}}`))
+	require.NoError(t, err)
+	assert.Equal(t, &AlertTrigger{}, got)
 }

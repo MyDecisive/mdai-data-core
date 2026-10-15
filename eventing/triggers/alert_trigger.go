@@ -4,7 +4,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// AlertCtx represents contextual information for alert-related events. It's used in matching rules.'
+// AlertCtx represents contextual information for alert-related events. It's used in matching rules.
 type AlertCtx struct {
 	Name   string
 	Status string // "firing" | "resolved"
