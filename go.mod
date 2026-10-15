@@ -27,7 +27,6 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.21.0
 	go.uber.org/mock v0.5.2
 	go.uber.org/zap v1.28.0
-	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.33.2
 	k8s.io/apimachinery v0.33.2
