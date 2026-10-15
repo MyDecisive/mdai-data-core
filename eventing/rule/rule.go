@@ -30,6 +30,7 @@ type ruleWireOut struct {
 }
 
 // UnmarshalJSON unmarshals the Rule from JSON.
+// Decoding is strict: unknown fields, an invalid trigger, and unknown command types are rejected.
 func (r *Rule) UnmarshalJSON(data []byte) error {
 	var wire ruleWireOut
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -41,6 +42,12 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 	trigger, err := triggers.BuildTrigger(wire.Trigger)
 	if err != nil {
 		return fmt.Errorf("trigger: %w", err)
+	}
+
+	for i, cmd := range wire.Commands {
+		if _, err := ParseCommandType(string(cmd.Type)); err != nil {
+			return fmt.Errorf("commands[%d]: %w", i, err)
+		}
 	}
 
 	r.Name = wire.Name

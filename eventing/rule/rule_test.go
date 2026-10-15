@@ -7,6 +7,7 @@ import (
 
 	"github.com/mydecisive/mdai-data-core/eventing/triggers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type wireForTest struct {
@@ -22,7 +23,7 @@ func TestRule_UnmarshalJSON_AlertOK(t *testing.T) {
 	js := []byte(`{
 		"name":"r1",
 		"trigger":{"kind":"alert","spec":{"name":"db_down","status":"resolved"}},
-		"commands":[{"type":"variable.set","inputs":{"k":"v"}}]
+		"commands":[{"type":"variable.set.add","inputs":{"k":"v"}}]
 	}`)
 	var r Rule
 	assert.NoError(t, json.Unmarshal(js, &r))
@@ -33,7 +34,7 @@ func TestRule_UnmarshalJSON_AlertOK(t *testing.T) {
 	assert.Equal(t, "resolved", al.Status)
 	assert.Equal(t, "r1", r.Name)
 	assert.Len(t, r.Commands, 1)
-	assert.Equal(t, "variable.set", r.Commands[0].Type.String())
+	assert.Equal(t, CmdVarSetAdd, r.Commands[0].Type)
 }
 
 func TestRule_UnmarshalJSON_VariableOK(t *testing.T) {
@@ -89,6 +90,72 @@ func TestRule_UnmarshalJSON_UnknownTopLevelField(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown field")
 }
 
+func TestRule_UnmarshalJSON_InvalidCommandType(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmds    string
+		wantErr string
+	}{
+		{"unknown type", `[{"type":"variable.set","inputs":{}}]`, `commands[0]: invalid command type "variable.set"`},
+		{"second command invalid", `[{"type":"webhook.call","inputs":{}},{"type":"Webhook.Call","inputs":{}}]`, `commands[1]: invalid command type "Webhook.Call"`},
+		{"missing type", `[{"inputs":{}}]`, `commands[0]: invalid command type ""`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			js := []byte(`{"name":"r","trigger":{"kind":"alert","spec":{"name":"x"}},"commands":` + tc.cmds + `}`)
+			var r Rule
+			err := json.Unmarshal(js, &r)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestRule_UnmarshalJSON_AllCommandTypesAccepted(t *testing.T) {
+	cmds := make([]Command, 0, len(AllCommandTypes))
+	for _, ct := range AllCommandTypes {
+		cmds = append(cmds, Command{Type: ct, Inputs: json.RawMessage(`{}`)})
+	}
+	in := Rule{Name: "r", Trigger: &triggers.VariableTrigger{Name: "cpu", UpdateType: "set"}, Commands: cmds}
+
+	out, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	var got Rule
+	require.NoError(t, json.Unmarshal(out, &got))
+	assert.Equal(t, in, got)
+}
+
+func TestRule_UnmarshalJSON_StrictTriggerEnvelope(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger string
+		wantErr string
+	}{
+		{"unknown envelope field", `{"kind":"alert","spec":{"name":"x"},"extra":1}`, `trigger: trigger envelope: json: unknown field "extra"`},
+		{"missing spec", `{"kind":"alert"}`, `trigger: trigger envelope: missing spec`},
+		{"missing kind", `{"spec":{"name":"x"}}`, `trigger: trigger envelope: missing kind`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			js := []byte(`{"name":"r","trigger":` + tc.trigger + `,"commands":[]}`)
+			var r Rule
+			err := json.Unmarshal(js, &r)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestRule_UnmarshalJSON_MissingTrigger(t *testing.T) {
+	var r Rule
+	err := json.Unmarshal([]byte(`{"name":"r","commands":[]}`), &r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "trigger: trigger envelope: missing trigger")
+}
+
 func TestRule_MarshalJSON_AlertOK(t *testing.T) {
 	in := map[string]string{"k": "v"}
 	inRaw, _ := json.Marshal(in)
@@ -96,7 +163,7 @@ func TestRule_MarshalJSON_AlertOK(t *testing.T) {
 		Name:    "r1",
 		Trigger: &triggers.AlertTrigger{Name: "db_down", Status: "firing"},
 		Commands: []Command{
-			{Type: "variable.set", Inputs: json.RawMessage(inRaw)},
+			{Type: CmdVarSetAdd, Inputs: json.RawMessage(inRaw)},
 		},
 	}
 
@@ -114,7 +181,7 @@ func TestRule_MarshalJSON_AlertOK(t *testing.T) {
 	assert.Equal(t, "firing", spec.Status)
 
 	assert.Len(t, wire.Commands, 1)
-	assert.Equal(t, "variable.set", wire.Commands[0].Type.String())
+	assert.Equal(t, CmdVarSetAdd, wire.Commands[0].Type)
 
 	var got map[string]string
 	assert.NoError(t, json.Unmarshal(wire.Commands[0].Inputs, &got))

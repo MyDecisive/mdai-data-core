@@ -119,8 +119,9 @@ func (e *Engine) InterpolateWithSources(input string, sources ...ValueSource) st
 
 // replaceMatch processes a single interpolation match
 func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueSource) string {
-	matches := e.pattern.FindStringSubmatch(match)
-	if len(matches) < 3 {
+	// Indexes are start/end pairs per group: scope (2,3), field (4,5), default (6,7).
+	idx := e.pattern.FindStringSubmatchIndex(match)
+	if len(idx) < 8 || idx[2] < 0 || idx[4] < 0 {
 		e.logger.Error("failed to match regex, missing required elements",
 			zap.Bool("interpolation_made", false),
 			zap.String("match", match),
@@ -128,11 +129,13 @@ func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueS
 		return match
 	}
 
-	scope := strings.TrimSpace(matches[1])
-	field := strings.TrimSpace(matches[2])
+	scope := strings.TrimSpace(match[idx[2]:idx[3]])
+	field := strings.TrimSpace(match[idx[4]:idx[5]])
+	// A default is declared when the ":-" group matched, even if it is empty (${scope:field:-}).
+	hasDefault := idx[6] >= 0
 	defaultValue := ""
-	if len(matches) > 3 && matches[3] != "" {
-		defaultValue = matches[3]
+	if hasDefault {
+		defaultValue = match[idx[6]:idx[7]]
 	}
 
 	src, ok := sources[scope]
@@ -148,7 +151,7 @@ func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueS
 
 	val, found := src.Lookup(field)
 	if !found {
-		if defaultValue != "" {
+		if hasDefault {
 			e.logger.Warn("field not found, using default",
 				zap.Bool("interpolation_made", true),
 				zap.String("scope", scope),

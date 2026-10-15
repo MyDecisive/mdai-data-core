@@ -96,6 +96,7 @@ Examples:
 | `Status: ${trigger:payload.status:-unknown}` | `status` key is missing from payload.   | `Status: unknown`|  
 | `Name: ${trigger:name:-guest}`             | `event.Name` is an empty string.        | `Name: guest`    |  
 | `Time: ${trigger:timestamp:-now}`          | `event.Timestamp` is a zero time.       | `Time: now`      |  
+| `Tag: [${trigger:payload.tag:-}]`          | `tag` key is missing; empty default.    | `Tag: []`        |  
 
 #### Unsupported or missing scope
 If the scope has no provider (e.g., no trigger source was supplied, or a typo like env), the placeholder is left unchanged, even if a default is present.
