@@ -122,9 +122,9 @@ func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueS
 	// Indexes are start/end pairs per group: scope (2,3), field (4,5), default (6,7).
 	idx := e.pattern.FindStringSubmatchIndex(match)
 	if len(idx) < 8 || idx[2] < 0 || idx[4] < 0 {
+		// The raw match is not logged: it may contain an inline default value.
 		e.logger.Error("failed to match regex, missing required elements",
 			zap.Bool("interpolation_made", false),
-			zap.String("match", match),
 		)
 		return match
 	}
@@ -137,12 +137,14 @@ func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueS
 	if hasDefault {
 		defaultValue = match[idx[6]:idx[7]]
 	}
+	// Logs use the redacted expression: inline defaults can hold literal secrets.
+	expr := redactedExpression(scope, field, hasDefault)
 
 	src, ok := sources[scope]
 	if !ok {
 		e.logger.Error("unsupported scope",
 			zap.Bool("interpolation_made", false),
-			zap.String("match", match),
+			zap.String("match", expr),
 			zap.String("scope", scope),
 			zap.String("field", field),
 		)
@@ -156,28 +158,37 @@ func (e *Engine) replaceMatchWithSources(match string, sources map[string]ValueS
 				zap.Bool("interpolation_made", true),
 				zap.String("scope", scope),
 				zap.String("field", field),
-				zap.String("default", defaultValue),
+				zap.String("match", expr),
 			)
 			return defaultValue
 		}
 		e.logger.Warn("field not found and no default value provided",
 			zap.Bool("interpolation_made", false),
-			zap.String("match", match),
+			zap.String("match", expr),
 			zap.String("scope", scope),
 			zap.String("field", field),
 		)
 		return match
 	}
 
-	e.logger.Info("interpolation succeeded",
+	// The resolved value is not logged: it can carry payload or variable data.
+	e.logger.Debug("interpolation succeeded",
 		zap.Bool("interpolation_made", true),
-		zap.String("match", match),
+		zap.String("match", expr),
 		zap.String("scope", scope),
 		zap.String("field", field),
-		zap.String("value", val),
 	)
 
 	return val
+}
+
+// redactedExpression rebuilds an interpolation expression for logging, replacing any inline
+// default with a placeholder so literal fallback values never reach the logs.
+func redactedExpression(scope, field string, hasDefault bool) string {
+	if hasDefault {
+		return "${" + scope + ":" + field + ":-<redacted>}"
+	}
+	return "${" + scope + ":" + field + "}"
 }
 
 // InterpolateMapWithSources interpolate map with arbitrary sources (e.g., trigger+template)

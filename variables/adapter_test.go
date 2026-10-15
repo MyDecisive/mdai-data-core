@@ -11,6 +11,8 @@ import (
 	vmock "github.com/valkey-io/valkey-go/mock"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"gopkg.in/yaml.v3"
 )
 
@@ -431,4 +433,21 @@ func TestGetMapAsString_KeepsNonCanonicalNumbersAsStrings(t *testing.T) {
 		"port":  8080,
 	}, got, "YAML output:\n%s", out)
 	assert.NotContains(t, out, "1e+20")
+}
+
+func TestAddElementToSet_DoesNotLogValue(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	client := vmock.NewClient(gomock.NewController(t))
+	adapter := NewValkeyAdapter(client, zap.New(core))
+
+	const secret = "s3cret-member"
+	cmd := adapter.AddElementToSet("service_list", "hub", secret)
+	assert.Equal(t, []string{"SADD", "variable/hub/service_list", secret}, cmd.Commands())
+
+	entries := logs.FilterMessage("Adding element to set").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	assert.Equal(t, "service_list", fields["variableKey"])
+	assert.Equal(t, "variable/hub/service_list", fields["key"])
+	assert.NotContains(t, fields, "value")
 }
