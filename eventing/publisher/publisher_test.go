@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/synadia-io/orbit.go/pcgroups"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func runJetStream(t *testing.T) (*server.Server, string) {
@@ -805,4 +807,68 @@ func TestPublishRejectsIncompleteSubject(t *testing.T) {
 			require.EqualError(t, err, tc.wantErr)
 		})
 	}
+}
+
+func TestPublishLogsMetadataOnly(t *testing.T) {
+	srv, _ := runJetStream(t)
+	defer srv.Shutdown()
+
+	core, logs := observer.New(zapcore.DebugLevel)
+	pub, err := NewPublisher(t.Context(), zap.New(core), "test-log-metadata")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, pub.Close(), "failed to close publisher")
+	}()
+
+	const secret = "s3cret-variable-value"
+	event := eventing.MdaiEvent{
+		Name:          "var.set",
+		HubName:       "hub",
+		Source:        "test",
+		CorrelationID: "corr-1",
+		Payload:       `{"value":"` + secret + `"}`,
+	}
+	mustPublish(t, pub, event)
+
+	for _, entry := range logs.All() {
+		for k, v := range entry.ContextMap() {
+			assert.NotContainsf(t, fmt.Sprint(v), secret, "log %q field %q leaks the payload", entry.Message, k)
+		}
+	}
+
+	publishing := logs.FilterMessage("Publishing event to subject").All()
+	require.Len(t, publishing, 1)
+	assert.Equal(t, zapcore.InfoLevel, publishing[0].Level)
+	fields := publishing[0].ContextMap()
+	assert.Equal(t, "var.set", fields["event_name"])
+	assert.Equal(t, "hub", fields["hub_name"])
+	assert.Equal(t, "corr-1", fields["correlation_id"])
+	assert.NotEmpty(t, fields["event_id"])
+	assert.EqualValues(t, len(event.Payload), fields["payload_bytes"])
+	assert.NotContains(t, fields, "event")
+
+	published := logs.FilterMessage("Published message").All()
+	require.Len(t, published, 1)
+	assert.Equal(t, zapcore.DebugLevel, published[0].Level)
+	assert.EqualValues(t, 1, published[0].ContextMap()["sequence"])
+	assert.Equal(t, false, published[0].ContextMap()["duplicate"])
+}
+
+func TestPublishErrorDoesNotLogPubAck(t *testing.T) {
+	srv, _ := runJetStream(t)
+	defer srv.Shutdown()
+
+	core, logs := observer.New(zapcore.DebugLevel)
+	pub, err := NewPublisher(t.Context(), zap.New(core), "test-log-error")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, pub.Close(), "failed to close publisher")
+	}()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err = pub.Publish(ctx, eventing.MdaiEvent{Name: "x", HubName: "hub", Source: "test"},
+		eventing.NewMdaiEventSubject(eventing.AlertEventType, "mdai.test"))
+	require.Error(t, err)
+	assert.Empty(t, logs.FilterMessage("Published message").All())
 }

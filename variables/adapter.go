@@ -255,7 +255,8 @@ func (r *ValkeyAdapter) GetMap(ctx context.Context, variableKey string, hubName 
 
 func (r *ValkeyAdapter) AddElementToSet(variableKey string, hubName string, value string) valkey.Completed {
 	key := r.composeStorageKey(variableKey, hubName)
-	r.logger.Info("Adding element to set", zap.String("variableKey", variableKey), zap.Any("value", value), zap.String("key", key))
+	// The element itself is not logged: variable values can be sensitive.
+	r.logger.Info("Adding element to set", zap.String("variableKey", variableKey), zap.String("key", key))
 	return r.client.B().Sadd().Key(key).Member(value).Build()
 }
 

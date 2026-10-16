@@ -1,12 +1,16 @@
 package interpolation
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/mydecisive/mdai-data-core/eventing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestEngine_Interpolate(t *testing.T) {
@@ -629,4 +633,93 @@ func TestEngine_PayloadNumberLexicalForm(t *testing.T) {
 
 	got := e.Interpolate("${trigger:payload.n}", ev)
 	assert.Equal(t, "1.00", got)
+}
+
+func TestEngine_SuccessLogOmitsValue(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	engine := NewEngine(zap.New(core))
+
+	const secret = "s3cret-value"
+	event := &eventing.MdaiEvent{Payload: `{"token":"` + secret + `"}`}
+	got := engine.InterpolateWithValues("t=${trigger:payload.token} v=${template:k}", event, map[string]string{"k": secret})
+	assert.Equal(t, "t="+secret+" v="+secret, got)
+
+	entries := logs.FilterMessage("interpolation succeeded").All()
+	require.Len(t, entries, 2)
+	for _, entry := range entries {
+		assert.Equal(t, zapcore.DebugLevel, entry.Level)
+		assert.NotContains(t, entry.ContextMap(), "value")
+		for k, v := range entry.ContextMap() {
+			assert.NotContainsf(t, fmt.Sprint(v), secret, "field %q leaks the value", k)
+		}
+	}
+}
+
+func TestEngine_LogsRedactInlineDefaults(t *testing.T) {
+	const secret = "s3cret-fallback"
+
+	tests := []struct {
+		name     string
+		input    string
+		tpl      map[string]string
+		expected string
+		message  string
+		level    zapcore.Level
+		wantExpr string
+	}{
+		{
+			name:     "lookup succeeds",
+			input:    "${template:token:-" + secret + "}",
+			tpl:      map[string]string{"token": "found"},
+			expected: "found",
+			message:  "interpolation succeeded",
+			level:    zapcore.DebugLevel,
+			wantExpr: "${template:token:-<redacted>}",
+		},
+		{
+			name:     "default used",
+			input:    "${template:token:-" + secret + "}",
+			expected: secret,
+			message:  "field not found, using default",
+			level:    zapcore.WarnLevel,
+			wantExpr: "${template:token:-<redacted>}",
+		},
+		{
+			name:     "unsupported scope",
+			input:    "${env:token:-" + secret + "}",
+			expected: "${env:token:-" + secret + "}",
+			message:  "unsupported scope",
+			level:    zapcore.ErrorLevel,
+			wantExpr: "${env:token:-<redacted>}",
+		},
+		{
+			name:     "no default",
+			input:    "${template:token}",
+			expected: "${template:token}",
+			message:  "field not found and no default value provided",
+			level:    zapcore.WarnLevel,
+			wantExpr: "${template:token}",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.DebugLevel)
+			engine := NewEngine(zap.New(core))
+
+			assert.Equal(t, tc.expected, engine.InterpolateWithValues(tc.input, nil, tc.tpl))
+
+			for _, entry := range logs.All() {
+				for k, v := range entry.ContextMap() {
+					assert.NotContainsf(t, fmt.Sprint(v), secret, "log %q field %q leaks the default", entry.Message, k)
+				}
+			}
+
+			entries := logs.FilterMessage(tc.message).All()
+			require.Len(t, entries, 1)
+			assert.Equal(t, tc.level, entries[0].Level)
+			assert.Equal(t, tc.wantExpr, entries[0].ContextMap()["match"])
+			assert.NotContains(t, entries[0].ContextMap(), "default")
+		})
+	}
 }

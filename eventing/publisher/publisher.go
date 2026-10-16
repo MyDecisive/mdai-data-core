@@ -66,7 +66,17 @@ func (p *EventPublisher) Publish(ctx context.Context, event eventing.MdaiEvent, 
 	}
 
 	fullSubject := subject.PrefixedString(p.cfg.Subject)
-	p.logger.Info("Publishing event to subject", zap.String("subject", fullSubject), zap.Object("event", &event))
+	// Log metadata only: the payload can carry variable values and other sensitive data.
+	p.logger.Info("Publishing event to subject",
+		zap.String("subject", fullSubject),
+		zap.String("event_id", event.ID),
+		zap.String("event_name", event.Name),
+		zap.String("source", event.Source),
+		zap.String("hub_name", event.HubName),
+		zap.String("correlation_id", event.CorrelationID),
+		zap.Int("recursion_depth", event.RecursionDepth),
+		zap.Int("payload_bytes", len(event.Payload)),
+	)
 
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -88,8 +98,17 @@ func (p *EventPublisher) Publish(ctx context.Context, event eventing.MdaiEvent, 
 	}
 
 	pubAck, err := p.js.PublishMsg(ctx, msg)
-	p.logger.Info("Published message", zap.Reflect("pubAck", pubAck))
-	return err
+	if err != nil {
+		return err
+	}
+	p.logger.Debug("Published message",
+		zap.String("subject", fullSubject),
+		zap.String("event_id", event.ID),
+		zap.String("stream", pubAck.Stream),
+		zap.Uint64("sequence", pubAck.Sequence),
+		zap.Bool("duplicate", pubAck.Duplicate),
+	)
+	return nil
 }
 
 func (p *EventPublisher) Close() error {
